@@ -38,6 +38,7 @@ match upstream's build.
 | `core_functions` | always linked | on |
 | `parquet` | `--@duckdb//:parquet` | on |
 | `json` | `--@duckdb//:json` | off |
+| `autocomplete` | `--@duckdb//:autocomplete` | off |
 
 For example, in `.bazelrc`:
 
@@ -46,8 +47,7 @@ build --@duckdb//:json=true
 build --@duckdb//:parquet=false
 ```
 
-The other in-tree extensions (`autocomplete`, `icu`, `tpch`, `tpcds`) are not available
-yet.
+The other in-tree extensions (`icu`, `tpch`, `tpcds`) are not available yet.
 
 ### jemalloc
 

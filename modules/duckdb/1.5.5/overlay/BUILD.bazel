@@ -38,6 +38,7 @@ config_setting(
 #   --@duckdb//:json=true
 #   --@duckdb//:parquet=false
 OPTIONAL_EXTENSIONS = {
+    "autocomplete": False,
     "json": False,
     "parquet": True,
 }
@@ -315,6 +316,17 @@ cc_library(
     includes = ["extension/core_functions/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_CORE_FUNCTIONS=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "autocomplete_extension",
+    srcs = glob(["extension/autocomplete/**/*.cpp"]),
+    hdrs = glob(["extension/autocomplete/include/**/*.hpp"]),
+    includes = ["extension/autocomplete/include"],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_AUTOCOMPLETE=\\"%s\\"' % DUCKDB_VERSION,
     ],
     deps = [":third_party_headers"],
 )

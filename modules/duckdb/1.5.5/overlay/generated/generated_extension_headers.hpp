@@ -5,6 +5,10 @@
 // for each extension whose flag is on.
 #include "core_functions_extension.hpp"
 
+#ifdef DUCKDB_EXTENSION_AUTOCOMPLETE_LINKED
+#include "autocomplete_extension.hpp"
+#endif
+
 #ifdef DUCKDB_EXTENSION_JSON_LINKED
 #include "json_extension.hpp"
 #endif
