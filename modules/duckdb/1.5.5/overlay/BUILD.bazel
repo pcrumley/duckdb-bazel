@@ -1,7 +1,10 @@
 """Bazel build for DuckDB.
 
-Scaffold only: the public target currently exports the headers and compiles no sources,
-so consumers can compile against it but not link.
+Mirrors upstream's CMake build: the core library in src/ plus the vendored libraries in
+third_party/ that it always links. No extensions are linked in yet.
+
+Optimisation level, NDEBUG and the C++ standard are left to the consumer's toolchain and
+compilation mode (upstream's release build is the equivalent of `-c opt`).
 """
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -12,12 +15,221 @@ licenses(["notice"])  # MIT
 
 exports_files(["LICENSE"])
 
+DUCKDB_VERSION = "v1.5.5"
+
+# Short commit id of the release tag, as reported by `PRAGMA version`.
+DUCKDB_SOURCE_ID = "d8cdaa33fd"
+
+COMMON_DEFINES = ["DUCKDB_BUILD_LIBRARY"]
+
+# Upstream compiles most vendored code with warnings off. It also uses
+# -fvisibility=hidden for some of it, which is left out here: Bazel links each cc_library
+# as its own shared object in dynamic mode, and the core library needs those symbols.
+THIRD_PARTY_COPTS = ["-w"]
+
+# Include directories upstream puts on the command line of every translation unit.
+THIRD_PARTY_INCLUDES = [
+    "third_party/concurrentqueue",
+    "third_party/fast_float",
+    "third_party/fastpforlib",
+    "third_party/fmt/include",
+    "third_party/fsst",
+    "third_party/httplib",
+    "third_party/hyperloglog",
+    "third_party/jaro_winkler",
+    "third_party/mbedtls/include",
+    "third_party/miniz",
+    "third_party/pcg",
+    "third_party/pdqsort",
+    "third_party/re2",
+    "third_party/ska_sort",
+    "third_party/skiplist",
+    "third_party/tdigest",
+    "third_party/utf8proc/include",
+    "third_party/vergesort",
+    "third_party/yyjson/include",
+    "third_party/zstd/include",
+]
+
+# The public API: only src/include is visible to consumers.
 cc_library(
-    name = "duckdb",
+    name = "headers",
     hdrs = glob([
         "src/include/**/*.h",
         "src/include/**/*.hpp",
     ]),
     includes = ["src/include"],
+)
+
+# Headers of every vendored library, with upstream's include paths. Internal: the public
+# target depends on it through implementation_deps so the paths do not reach consumers.
+cc_library(
+    name = "third_party_headers",
+    hdrs = glob(
+        [
+            "third_party/**/*.h",
+            "third_party/**/*.hpp",
+        ],
+        exclude = [
+            "third_party/catch/**",
+            "third_party/jemalloc/**",
+        ],
+    ),
+    includes = THIRD_PARTY_INCLUDES,
+    # Sources that are #included by other sources rather than compiled on their own.
+    textual_hdrs = [
+        "third_party/libpg_query/grammar/grammar.cpp",
+        "third_party/utf8proc/utf8proc_data.cpp",
+    ],
+    deps = [":headers"],
+)
+
+cc_library(
+    name = "pg_query_headers",
+    includes = [
+        "third_party/libpg_query",
+        "third_party/libpg_query/include",
+    ],
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "fastpforlib",
+    srcs = glob(["third_party/fastpforlib/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "fmt",
+    srcs = glob(["third_party/fmt/**/*.cc"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "fsst",
+    srcs = glob(["third_party/fsst/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "hyperloglog",
+    srcs = glob(["third_party/hyperloglog/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "pg_query",
+    srcs = glob(
+        ["third_party/libpg_query/**/*.cpp"],
+        exclude = ["third_party/libpg_query/grammar/grammar.cpp"],
+    ),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":pg_query_headers"],
+)
+
+cc_library(
+    name = "mbedtls",
+    srcs = glob(["third_party/mbedtls/**/*.cpp"]),
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "miniz",
+    srcs = glob(["third_party/miniz/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "re2",
+    srcs = glob(["third_party/re2/**/*.cc"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES + ["RE2_ON_VALGRIND"],
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "skiplist",
+    srcs = glob(["third_party/skiplist/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "utf8proc",
+    srcs = glob(
+        ["third_party/utf8proc/**/*.cpp"],
+        exclude = ["third_party/utf8proc/utf8proc_data.cpp"],
+    ),
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "yyjson",
+    srcs = glob(["third_party/yyjson/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "zstd",
+    srcs = glob(["third_party/zstd/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "duckdb",
+    srcs = glob(
+        ["src/**/*.cpp"],
+        # The jemalloc-backed allocator; allocator_standard.cpp is its counterpart.
+        exclude = ["src/common/allocator/allocator_jemalloc.cpp"],
+    ) + ["generated/generated_extension_loader.cpp"],
+    implementation_deps = [
+        ":fastpforlib",
+        ":fmt",
+        ":fsst",
+        ":hyperloglog",
+        ":mbedtls",
+        ":miniz",
+        ":pg_query",
+        ":pg_query_headers",
+        ":re2",
+        ":skiplist",
+        ":third_party_headers",
+        ":utf8proc",
+        ":yyjson",
+        ":zstd",
+    ],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-lpthread",
+            "-ldl",
+            "-lm",
+        ],
+    }),
+    local_defines = COMMON_DEFINES + [
+        "DUCKDB",
+        "DUCKDB_MAIN_LIBRARY",
+        'DUCKDB_VERSION=\\"%s\\"' % DUCKDB_VERSION,
+        'DUCKDB_SOURCE_ID=\\"%s\\"' % DUCKDB_SOURCE_ID,
+    ],
     visibility = ["//visibility:public"],
+    deps = [":headers"],
 )
