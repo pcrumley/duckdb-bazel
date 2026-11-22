@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  integrity:
+    name: Overlay hashes
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/update_integrity.py --check
+
+  smoke:
+    name: Smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-15
+    defaults:
+      run:
+        working-directory: e2e/smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bazel-contrib/setup-bazel@0.19.2
+        with:
+          module-root: e2e/smoke
+          bazelisk-cache: true
+          repository-cache: true
+          cache-save: ${{ github.ref == 'refs/heads/main' }}
+
+      # The Bazel disk cache set in e2e/smoke/.bazelrc. A clean DuckDB build takes close
+      # to an hour on a hosted runner, so restore the most recent cache for this platform
+      # even when the build files have changed.
+      - name: Restore disk cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/duckdb-bazel-disk-cache
+          key: disk-cache-${{ matrix.os }}-${{ hashFiles('modules/**', 'e2e/**') }}
+          restore-keys: disk-cache-${{ matrix.os }}-
+
+      - name: Mark start of build
+        run: touch "$RUNNER_TEMP/build-start"
+
+      - name: Test with every optional extension
+        run: bazel test //:smoke_test
+
+      - name: Test with no optional extensions, no jemalloc, static link
+        run: >
+          bazel test //:smoke_test
+          --@duckdb//:json=false
+          --@duckdb//:parquet=false
+          --@duckdb//:jemalloc=false
+          --dynamic_mode=off
+
+      # Bazel refreshes the modification time of every cache entry it uses, so anything
+      # older than the start of this build was not needed and would only grow the cache.
+      - name: Trim disk cache
+        if: github.ref == 'refs/heads/main'
+        run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
+
+      - name: Save disk cache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/duckdb-bazel-disk-cache
+          key: disk-cache-${{ matrix.os }}-${{ hashFiles('modules/**', 'e2e/**') }}
