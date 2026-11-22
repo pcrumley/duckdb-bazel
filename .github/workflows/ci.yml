@@ -18,7 +18,7 @@ jobs:
     name: Overlay hashes
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: python3 tools/update_integrity.py --check
 
   smoke:
@@ -36,20 +36,20 @@ jobs:
       run:
         working-directory: e2e/smoke
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: bazel-contrib/setup-bazel@0.19.2
+      - uses: bazel-contrib/setup-bazel@f34d6a05eae3c24acab7fa54587492daeaeffdab # 0.19.2
         with:
           module-root: e2e/smoke
           bazelisk-cache: true
           repository-cache: true
-          cache-save: ${{ github.ref == 'refs/heads/main' }}
+          cache-save: ${{ !github.event.pull_request.head.repo.fork }}
 
       # The Bazel disk cache set in e2e/smoke/.bazelrc. A clean DuckDB build takes close
       # to an hour on a hosted runner, so restore the most recent cache for this platform
       # even when the build files have changed.
       - name: Restore disk cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/duckdb-bazel-disk-cache
           key: disk-cache-${{ matrix.os }}-${{ hashFiles('modules/**', 'e2e/**') }}
@@ -72,12 +72,14 @@ jobs:
       # Bazel refreshes the modification time of every cache entry it uses, so anything
       # older than the start of this build was not needed and would only grow the cache.
       - name: Trim disk cache
-        if: github.ref == 'refs/heads/main'
         run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
 
+      # Saved from pull requests too (GitHub scopes those caches to the pull request), so
+      # that repeated pushes to one do not each pay for a full build. Not from forks:
+      # their caches would count against the repository's quota and could evict main's.
       - name: Save disk cache
-        if: github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/duckdb-bazel-disk-cache
           key: disk-cache-${{ matrix.os }}-${{ hashFiles('modules/**', 'e2e/**') }}
