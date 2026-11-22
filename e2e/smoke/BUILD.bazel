@@ -6,6 +6,9 @@ cc_test(
     name = "smoke_test",
     srcs = ["smoke_test.cc"],
     args = select({
+        "@duckdb//:autocomplete_enabled": ["autocomplete"],
+        "//conditions:default": [],
+    }) + select({
         "@duckdb//:json_enabled": ["json"],
         "//conditions:default": [],
     }) + select({

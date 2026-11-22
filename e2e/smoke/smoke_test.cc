@@ -68,6 +68,11 @@ int main(int argc, char **argv) {
     Check(con, "SELECT sum(i) FROM read_parquet('" + path + "')", "499500");
   }
 
+  if (Expect(con, expected, "autocomplete")) {
+    extensions += " autocomplete";
+    Check(con, "SELECT trim(suggestion) FROM sql_auto_complete('SEL') LIMIT 1", "SELECT");
+  }
+
   if (Expect(con, expected, "json")) {
     extensions += " json";
     Check(con, "SELECT json_extract('{\"a\": {\"b\": 41}}', '$.a.b')::INTEGER + 1", "42");

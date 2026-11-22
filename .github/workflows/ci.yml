@@ -64,6 +64,7 @@ jobs:
       - name: Test with no optional extensions, no jemalloc, static link
         run: >
           bazel test //:smoke_test
+          --@duckdb//:autocomplete=false
           --@duckdb//:json=false
           --@duckdb//:parquet=false
           --@duckdb//:jemalloc=false
