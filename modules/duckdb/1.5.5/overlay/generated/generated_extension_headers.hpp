@@ -17,6 +17,10 @@
 #include "parquet_extension.hpp"
 #endif
 
+#ifdef DUCKDB_EXTENSION_TPCDS_LINKED
+#include "tpcds_extension.hpp"
+#endif
+
 #ifdef DUCKDB_EXTENSION_TPCH_LINKED
 #include "tpch_extension.hpp"
 #endif

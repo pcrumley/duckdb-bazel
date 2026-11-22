@@ -15,6 +15,9 @@ cc_test(
         "@duckdb//:parquet_enabled": ["parquet"],
         "//conditions:default": [],
     }) + select({
+        "@duckdb//:tpcds_enabled": ["tpcds"],
+        "//conditions:default": [],
+    }) + select({
         "@duckdb//:tpch_enabled": ["tpch"],
         "//conditions:default": [],
     }),
