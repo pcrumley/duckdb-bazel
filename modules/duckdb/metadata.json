@@ -1,0 +1,17 @@
+{
+    "homepage": "https://duckdb.org",
+    "maintainers": [
+        {
+            "github": "pcrumley",
+            "github_user_id": 15001732,
+            "name": "Patrick Crumley"
+        }
+    ],
+    "repository": [
+        "github:duckdb/duckdb"
+    ],
+    "versions": [
+        "1.5.5"
+    ],
+    "yanked_versions": {}
+}

@@ -1,0 +1,23 @@
+"""Bazel build for DuckDB.
+
+Scaffold only: the public target currently exports the headers and compiles no sources,
+so consumers can compile against it but not link.
+"""
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:private"])
+
+licenses(["notice"])  # MIT
+
+exports_files(["LICENSE"])
+
+cc_library(
+    name = "duckdb",
+    hdrs = glob([
+        "src/include/**/*.h",
+        "src/include/**/*.hpp",
+    ]),
+    includes = ["src/include"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,10 @@
+# Resolve duckdb from this repository, everything else from the BCR.
+common --registry=file://%workspace%/../..
+common --registry=https://bcr.bazel.build
+
+# The lockfile would record the local registry's overlay hashes, which change on every
+# edit to the overlay.
+common --lockfile_mode=off
+
+build --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+test --test_output=errors
