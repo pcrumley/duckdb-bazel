@@ -43,6 +43,7 @@ jobs:
           module-root: e2e/smoke
           bazelisk-cache: true
           repository-cache: true
+          cache-save: ${{ !github.event.pull_request.head.repo.fork }}
 
       # The Bazel disk cache set in e2e/smoke/.bazelrc. A clean DuckDB build takes close
       # to an hour on a hosted runner, so restore the most recent cache for this platform
@@ -74,8 +75,10 @@ jobs:
         run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
 
       # Saved from pull requests too (GitHub scopes those caches to the pull request), so
-      # that repeated pushes to one do not each pay for a full build.
+      # that repeated pushes to one do not each pay for a full build. Not from forks:
+      # their caches would count against the repository's quota and could evict main's.
       - name: Save disk cache
+        if: ${{ !github.event.pull_request.head.repo.fork }}
         uses: actions/cache/save@v4
         with:
           path: ~/.cache/duckdb-bazel-disk-cache
