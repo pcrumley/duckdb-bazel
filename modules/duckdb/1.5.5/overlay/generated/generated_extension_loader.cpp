@@ -12,11 +12,15 @@ ExtensionLoadResult ExtensionHelper::LoadExtension(DuckDB &db, const std::string
 		db.LoadStaticExtension<CoreFunctionsExtension>();
 		return ExtensionLoadResult::LOADED_EXTENSION;
 	}
+	if (extension == "parquet") {
+		db.LoadStaticExtension<ParquetExtension>();
+		return ExtensionLoadResult::LOADED_EXTENSION;
+	}
 	return ExtensionLoadResult::NOT_LOADED;
 }
 
 vector<string> LinkedExtensions() {
-	return {"core_functions"};
+	return {"core_functions", "parquet"};
 }
 
 void ExtensionHelper::LoadAllExtensions(DuckDB &db) {

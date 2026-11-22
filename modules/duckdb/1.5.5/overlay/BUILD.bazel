@@ -1,7 +1,7 @@
 """Bazel build for DuckDB.
 
 Mirrors upstream's CMake build: the core library in src/, the vendored libraries in
-third_party/ that it always links, and the core_functions extension.
+third_party/ that it always links, and the core_functions and parquet extensions.
 
 Optimisation level, NDEBUG and the C++ standard are left to the consumer's toolchain and
 compilation mode (upstream's release build is the equivalent of `-c opt`).
@@ -193,6 +193,64 @@ cc_library(
     deps = [":third_party_headers"],
 )
 
+# Vendored libraries used only by the parquet extension.
+cc_library(
+    name = "parquet_third_party_headers",
+    includes = [
+        "third_party/brotli/include",
+        "third_party/lz4",
+        "third_party/parquet",
+        "third_party/snappy",
+        "third_party/thrift",
+    ],
+    # Template implementations that thrift's headers #include.
+    textual_hdrs = glob(["third_party/thrift/**/*.tcc"]),
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "brotli",
+    srcs = glob(["third_party/brotli/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+cc_library(
+    name = "lz4",
+    srcs = glob(["third_party/lz4/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+cc_library(
+    name = "parquet_format",
+    srcs = glob(["third_party/parquet/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+cc_library(
+    name = "snappy",
+    srcs = glob(
+        ["third_party/snappy/**/*.cc"],
+        exclude = ["third_party/snappy/snappy-stubs-internal.cc"],
+    ),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+cc_library(
+    name = "thrift",
+    srcs = glob(["third_party/thrift/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
 # Extensions linked into the library. Adding one here also means adding it to the two
 # files in generated/.
 cc_library(
@@ -206,6 +264,26 @@ cc_library(
     deps = [":third_party_headers"],
 )
 
+cc_library(
+    name = "parquet",
+    srcs = glob(["extension/parquet/**/*.cpp"]),
+    hdrs = glob(["extension/parquet/include/**/*.hpp"]),
+    includes = ["extension/parquet/include"],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_PARQUET=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [
+        ":brotli",
+        ":lz4",
+        ":miniz",
+        ":parquet_format",
+        ":parquet_third_party_headers",
+        ":snappy",
+        ":thrift",
+        ":zstd",
+    ],
+)
+
 # Registers the linked extensions with the core library. Upstream's CMake generates the
 # two files in generated/ at configure time.
 cc_library(
@@ -213,14 +291,18 @@ cc_library(
     srcs = ["generated/generated_extension_loader.cpp"],
     hdrs = ["generated/generated_extension_headers.hpp"],
     includes = ["generated"],
+    # Private, so that the extensions' include paths stay off the core library's command
+    # lines and adding an extension does not recompile the core.
+    implementation_deps = [
+        ":core_functions",
+        ":parquet",
+    ],
     local_defines = COMMON_DEFINES + [
         "GENERATED_EXTENSION_HEADERS=1",
         "DUCKDB_EXTENSION_CORE_FUNCTIONS_LINKED=1",
+        "DUCKDB_EXTENSION_PARQUET_LINKED=1",
     ],
-    deps = [
-        ":core_functions",
-        ":third_party_headers",
-    ],
+    deps = [":third_party_headers"],
 )
 
 cc_library(
@@ -264,7 +346,9 @@ cc_library(
     visibility = ["//visibility:public"],
     # The extensions and several vendored libraries call back into the core library
     # (upstream links them all into one archive). Always linking the core keeps a static
-    # link correct with linkers that resolve archives in command-line order.
+    # link correct with linkers that resolve archives in command-line order. Nearly all of
+    # the core is reachable from opening a database anyway: this adds under 1% to a
+    # statically linked binary.
     alwayslink = True,
     deps = [":headers"],
 )

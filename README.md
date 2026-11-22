@@ -5,8 +5,9 @@ registry. DuckDB is not in the Bazel Central Registry yet
 ([bazel-central-registry#4890](https://github.com/bazelbuild/bazel-central-registry/issues/4890));
 the aim is to submit this there once it is complete.
 
-**Status: work in progress.** The core library and the `core_functions` extension build and
-run queries on Linux x86_64. Parquet support is not linked in yet.
+**Status: work in progress.** The core library with the `core_functions` and `parquet`
+extensions builds and runs queries on Linux x86_64. Other platforms are untested, and
+jemalloc (which upstream enables on Linux) is not used.
 
 ## Use
 
@@ -63,7 +64,7 @@ bazel shutdown
 bazel test //:smoke_test
 ```
 
-A clean build compiles about 1,600 files and takes roughly twelve minutes on 16 cores.
+A clean build compiles about 1,700 files and takes roughly twelve minutes on 16 cores.
 
 ## Licence
 
