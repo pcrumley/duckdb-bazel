@@ -73,6 +73,16 @@ int main(int argc, char **argv) {
     Check(con, "SELECT trim(suggestion) FROM sql_auto_complete('SEL') LIMIT 1", "SELECT");
   }
 
+  if (Expect(con, expected, "icu")) {
+    extensions += " icu";
+    // Time zone data: Amsterdam is two hours ahead of UTC in summer.
+    Check(con, "SELECT timezone('Europe/Amsterdam', TIMESTAMPTZ '2024-07-01 12:00:00+00')::VARCHAR",
+          "2024-07-01 14:00:00");
+    // Collation data: German sorts a-umlaut with a, ahead of z.
+    Check(con, "SELECT string_agg(s, ',' ORDER BY s COLLATE de) FROM (VALUES ('z'), ('\u00e4'), ('a')) t(s)",
+          "a,\u00e4,z");
+  }
+
   if (Expect(con, expected, "json")) {
     extensions += " json";
     Check(con, "SELECT json_extract('{\"a\": {\"b\": 41}}', '$.a.b')::INTEGER + 1", "42");

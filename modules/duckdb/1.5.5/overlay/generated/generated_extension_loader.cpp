@@ -19,6 +19,12 @@ ExtensionLoadResult ExtensionHelper::LoadExtension(DuckDB &db, const std::string
 		return ExtensionLoadResult::LOADED_EXTENSION;
 	}
 #endif
+#ifdef DUCKDB_EXTENSION_ICU_LINKED
+	if (extension == "icu") {
+		db.LoadStaticExtension<IcuExtension>();
+		return ExtensionLoadResult::LOADED_EXTENSION;
+	}
+#endif
 #ifdef DUCKDB_EXTENSION_JSON_LINKED
 	if (extension == "json") {
 		db.LoadStaticExtension<JsonExtension>();
@@ -51,6 +57,9 @@ vector<string> LinkedExtensions() {
 	    "core_functions",
 #ifdef DUCKDB_EXTENSION_AUTOCOMPLETE_LINKED
 	    "autocomplete",
+#endif
+#ifdef DUCKDB_EXTENSION_ICU_LINKED
+	    "icu",
 #endif
 #ifdef DUCKDB_EXTENSION_JSON_LINKED
 	    "json",

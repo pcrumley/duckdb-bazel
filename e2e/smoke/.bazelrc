@@ -15,6 +15,7 @@ build --disk_cache=~/.cache/duckdb-bazel-disk-cache
 
 # Link every optional extension so the smoke test covers them all.
 build --@duckdb//:autocomplete=true
+build --@duckdb//:icu=true
 build --@duckdb//:json=true
 build --@duckdb//:tpcds=true
 build --@duckdb//:tpch=true

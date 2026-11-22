@@ -9,6 +9,10 @@
 #include "autocomplete_extension.hpp"
 #endif
 
+#ifdef DUCKDB_EXTENSION_ICU_LINKED
+#include "icu_extension.hpp"
+#endif
+
 #ifdef DUCKDB_EXTENSION_JSON_LINKED
 #include "json_extension.hpp"
 #endif

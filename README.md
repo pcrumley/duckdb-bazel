@@ -39,6 +39,7 @@ match upstream's build.
 | `parquet` | `--@duckdb//:parquet` | on |
 | `json` | `--@duckdb//:json` | off |
 | `autocomplete` | `--@duckdb//:autocomplete` | off |
+| `icu` | `--@duckdb//:icu` | off |
 | `tpch` | `--@duckdb//:tpch` | off |
 | `tpcds` | `--@duckdb//:tpcds` | off |
 
@@ -48,8 +49,6 @@ For example, in `.bazelrc`:
 build --@duckdb//:json=true
 build --@duckdb//:parquet=false
 ```
-
-The last in-tree extension, `icu`, is not available yet.
 
 ### jemalloc
 
