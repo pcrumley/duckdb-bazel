@@ -78,6 +78,19 @@ int main(int argc, char **argv) {
     Check(con, "SELECT json_extract('{\"a\": {\"b\": 41}}', '$.a.b')::INTEGER + 1", "42");
   }
 
+  if (Expect(con, expected, "tpcds")) {
+    extensions += " tpcds";
+    Check(con, "SELECT count(*) FROM tpcds_queries()", "99");
+    // In its own schema: tpch below generates a table named customer too.
+    auto generated = con.Query("CREATE SCHEMA ds; CALL dsdgen(sf = 0.01, schema = 'ds')");
+    if (generated->HasError()) {
+      std::cerr << "FAILED: CALL dsdgen(sf = 0.01)\n  " << generated->GetError() << "\n";
+      failures++;
+    }
+    Check(con, "SELECT count(*) FROM ds.date_dim", "73049");
+    Check(con, "SELECT count(*) > 0 FROM ds.store_sales", "true");
+  }
+
   if (Expect(con, expected, "tpch")) {
     extensions += " tpch";
     Check(con, "SELECT count(*) FROM tpch_queries()", "22");

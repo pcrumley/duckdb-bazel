@@ -41,6 +41,7 @@ OPTIONAL_EXTENSIONS = {
     "autocomplete": False,
     "json": False,
     "parquet": True,
+    "tpcds": False,
     "tpch": False,
 }
 
@@ -391,6 +392,31 @@ cc_library(
         ":parquet_third_party_headers",
         ":snappy",
         ":thrift",
+        ":vendored_libs",
+    ],
+)
+
+cc_library(
+    name = "tpcds_extension",
+    srcs = glob(["extension/tpcds/**/*.cpp"]),
+    hdrs = glob([
+        "extension/tpcds/include/**/*.hpp",
+        "extension/tpcds/dsdgen/include/**/*.h",
+        "extension/tpcds/dsdgen/include/**/*.hpp",
+    ]),
+    # dsdgen is the TPC's data generator, adapted by upstream; its warnings are off
+    # there too.
+    copts = THIRD_PARTY_COPTS,
+    includes = [
+        "extension/tpcds/dsdgen/include",
+        "extension/tpcds/dsdgen/include/dsdgen-c",
+        "extension/tpcds/include",
+    ],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_TPCDS=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [
+        ":third_party_headers",
         ":vendored_libs",
     ],
 )
