@@ -28,10 +28,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Only platforms that are known to pass. Others are added by the pull request
-        # that gets them working.
         os:
           - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-15
     defaults:
       run:
         working-directory: e2e/smoke

@@ -6,7 +6,7 @@ registry. DuckDB is not in the Bazel Central Registry yet
 the aim is to submit this there once it is complete.
 
 **Status: work in progress.** The core library and the extensions listed below build and
-run queries on Linux x86_64. Other platforms are untested.
+pass a smoke test in CI on Linux x86_64, Linux arm64 and macOS arm64. Windows is untested.
 
 ## Use
 
