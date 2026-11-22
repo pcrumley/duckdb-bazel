@@ -1,7 +1,7 @@
 """Bazel build for DuckDB.
 
-Mirrors upstream's CMake build: the core library in src/ plus the vendored libraries in
-third_party/ that it always links. No extensions are linked in yet.
+Mirrors upstream's CMake build: the core library in src/, the vendored libraries in
+third_party/ that it always links, and the core_functions extension.
 
 Optimisation level, NDEBUG and the C++ standard are left to the consumer's toolchain and
 compilation mode (upstream's release build is the equivalent of `-c opt`).
@@ -193,14 +193,45 @@ cc_library(
     deps = [":third_party_headers"],
 )
 
+# Extensions linked into the library. Adding one here also means adding it to the two
+# files in generated/.
+cc_library(
+    name = "core_functions",
+    srcs = glob(["extension/core_functions/**/*.cpp"]),
+    hdrs = glob(["extension/core_functions/include/**/*.hpp"]),
+    includes = ["extension/core_functions/include"],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_CORE_FUNCTIONS=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [":third_party_headers"],
+)
+
+# Registers the linked extensions with the core library. Upstream's CMake generates the
+# two files in generated/ at configure time.
+cc_library(
+    name = "extension_loader",
+    srcs = ["generated/generated_extension_loader.cpp"],
+    hdrs = ["generated/generated_extension_headers.hpp"],
+    includes = ["generated"],
+    local_defines = COMMON_DEFINES + [
+        "GENERATED_EXTENSION_HEADERS=1",
+        "DUCKDB_EXTENSION_CORE_FUNCTIONS_LINKED=1",
+    ],
+    deps = [
+        ":core_functions",
+        ":third_party_headers",
+    ],
+)
+
 cc_library(
     name = "duckdb",
     srcs = glob(
         ["src/**/*.cpp"],
         # The jemalloc-backed allocator; allocator_standard.cpp is its counterpart.
         exclude = ["src/common/allocator/allocator_jemalloc.cpp"],
-    ) + ["generated/generated_extension_loader.cpp"],
+    ),
     implementation_deps = [
+        ":extension_loader",
         ":fastpforlib",
         ":fmt",
         ":fsst",
@@ -231,5 +262,9 @@ cc_library(
         'DUCKDB_SOURCE_ID=\\"%s\\"' % DUCKDB_SOURCE_ID,
     ],
     visibility = ["//visibility:public"],
+    # The extensions and several vendored libraries call back into the core library
+    # (upstream links them all into one archive). Always linking the core keeps a static
+    # link correct with linkers that resolve archives in command-line order.
+    alwayslink = True,
     deps = [":headers"],
 )

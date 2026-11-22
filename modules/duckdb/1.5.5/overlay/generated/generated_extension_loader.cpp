@@ -8,11 +8,15 @@ namespace duckdb {
 
 //! Tries to load <extension> from the extensions that are linked into this library.
 ExtensionLoadResult ExtensionHelper::LoadExtension(DuckDB &db, const std::string &extension) {
+	if (extension == "core_functions") {
+		db.LoadStaticExtension<CoreFunctionsExtension>();
+		return ExtensionLoadResult::LOADED_EXTENSION;
+	}
 	return ExtensionLoadResult::NOT_LOADED;
 }
 
 vector<string> LinkedExtensions() {
-	return {};
+	return {"core_functions"};
 }
 
 void ExtensionHelper::LoadAllExtensions(DuckDB &db) {
