@@ -41,6 +41,7 @@ OPTIONAL_EXTENSIONS = {
     "autocomplete": False,
     "json": False,
     "parquet": True,
+    "tpch": False,
 }
 
 [
@@ -363,6 +364,27 @@ cc_library(
         ":thrift",
         ":zstd",
     ],
+)
+
+cc_library(
+    name = "tpch_extension",
+    srcs = glob(["extension/tpch/**/*.cpp"]),
+    hdrs = glob([
+        "extension/tpch/include/**/*.hpp",
+        "extension/tpch/dbgen/include/**/*.h",
+        "extension/tpch/dbgen/include/**/*.hpp",
+    ]),
+    # dbgen is the TPC's data generator, adapted by upstream; its warnings are off
+    # there too.
+    copts = THIRD_PARTY_COPTS,
+    includes = [
+        "extension/tpch/dbgen/include",
+        "extension/tpch/include",
+    ],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_TPCH=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [":third_party_headers"],
 )
 
 # For each optional extension: its library and the define that tells the loader about

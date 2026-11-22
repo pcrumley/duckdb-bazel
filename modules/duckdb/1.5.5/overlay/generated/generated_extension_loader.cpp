@@ -31,6 +31,12 @@ ExtensionLoadResult ExtensionHelper::LoadExtension(DuckDB &db, const std::string
 		return ExtensionLoadResult::LOADED_EXTENSION;
 	}
 #endif
+#ifdef DUCKDB_EXTENSION_TPCH_LINKED
+	if (extension == "tpch") {
+		db.LoadStaticExtension<TpchExtension>();
+		return ExtensionLoadResult::LOADED_EXTENSION;
+	}
+#endif
 	return ExtensionLoadResult::NOT_LOADED;
 }
 
@@ -45,6 +51,9 @@ vector<string> LinkedExtensions() {
 #endif
 #ifdef DUCKDB_EXTENSION_PARQUET_LINKED
 	    "parquet",
+#endif
+#ifdef DUCKDB_EXTENSION_TPCH_LINKED
+	    "tpch",
 #endif
 	};
 }

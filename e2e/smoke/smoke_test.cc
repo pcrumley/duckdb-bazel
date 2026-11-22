@@ -78,6 +78,17 @@ int main(int argc, char **argv) {
     Check(con, "SELECT json_extract('{\"a\": {\"b\": 41}}', '$.a.b')::INTEGER + 1", "42");
   }
 
+  if (Expect(con, expected, "tpch")) {
+    extensions += " tpch";
+    Check(con, "SELECT count(*) FROM tpch_queries()", "22");
+    auto generated = con.Query("CALL dbgen(sf = 0.01)");
+    if (generated->HasError()) {
+      std::cerr << "FAILED: CALL dbgen(sf = 0.01)\n  " << generated->GetError() << "\n";
+      failures++;
+    }
+    Check(con, "SELECT count(*) FROM lineitem", "60175");
+  }
+
   if (failures > 0) {
     return 1;
   }
