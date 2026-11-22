@@ -6,9 +6,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A newer push to a pull request cancels its run in progress. Runs on main are never
+# cancelled: they fill the cache every pull request starts from, and a cancelled run
+# saves nothing, so two merges close together would leave main without one.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
