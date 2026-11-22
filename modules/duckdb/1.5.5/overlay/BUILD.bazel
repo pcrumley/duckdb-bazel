@@ -308,6 +308,29 @@ cc_library(
     deps = [":parquet_third_party_headers"],
 )
 
+# The vendored libraries the core library links. Each extension depends on them too:
+# upstream links everything into one archive, so an extension may call any of them
+# (core_functions uses skiplist, for one). Without the dependency, a linker that
+# resolves archives in command-line order can meet a library before the extension that
+# needs it and drop the members it wants.
+cc_library(
+    name = "vendored_libs",
+    deps = [
+        ":fastpforlib",
+        ":fmt",
+        ":fsst",
+        ":hyperloglog",
+        ":mbedtls",
+        ":miniz",
+        ":pg_query",
+        ":re2",
+        ":skiplist",
+        ":utf8proc",
+        ":yyjson",
+        ":zstd",
+    ],
+)
+
 # Extensions. To add one: add its library below as <name>_extension, add it to
 # OPTIONAL_EXTENSIONS, and add it to the two files in generated/.
 cc_library(
@@ -318,7 +341,10 @@ cc_library(
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_CORE_FUNCTIONS=\\"%s\\"' % DUCKDB_VERSION,
     ],
-    deps = [":third_party_headers"],
+    deps = [
+        ":third_party_headers",
+        ":vendored_libs",
+    ],
 )
 
 cc_library(
@@ -329,7 +355,10 @@ cc_library(
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_AUTOCOMPLETE=\\"%s\\"' % DUCKDB_VERSION,
     ],
-    deps = [":third_party_headers"],
+    deps = [
+        ":third_party_headers",
+        ":vendored_libs",
+    ],
 )
 
 cc_library(
@@ -342,7 +371,7 @@ cc_library(
     ],
     deps = [
         ":third_party_headers",
-        ":yyjson",
+        ":vendored_libs",
     ],
 )
 
@@ -362,7 +391,7 @@ cc_library(
         ":parquet_third_party_headers",
         ":snappy",
         ":thrift",
-        ":zstd",
+        ":vendored_libs",
     ],
 )
 
@@ -384,7 +413,10 @@ cc_library(
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_TPCH=\\"%s\\"' % DUCKDB_VERSION,
     ],
-    deps = [":third_party_headers"],
+    deps = [
+        ":third_party_headers",
+        ":vendored_libs",
+    ],
 )
 
 # For each optional extension: its library and the define that tells the loader about
