@@ -39,6 +39,7 @@ config_setting(
 #   --@duckdb//:parquet=false
 OPTIONAL_EXTENSIONS = {
     "autocomplete": False,
+    "icu": False,
     "json": False,
     "parquet": True,
     "tpcds": False,
@@ -355,6 +356,30 @@ cc_library(
     includes = ["extension/autocomplete/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_AUTOCOMPLETE=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [
+        ":third_party_headers",
+        ":vendored_libs",
+    ],
+)
+
+# Includes upstream's vendored copy of ICU, about 380 files and 12 MB of locale and time
+# zone data. Upstream compiles all of it with warnings off.
+cc_library(
+    name = "icu_extension",
+    srcs = glob(["extension/icu/**/*.cpp"]),
+    hdrs = glob([
+        "extension/icu/include/**/*.hpp",
+        "extension/icu/third_party/icu/**/*.h",
+    ]),
+    copts = THIRD_PARTY_COPTS,
+    includes = [
+        "extension/icu/include",
+        "extension/icu/third_party/icu/common",
+        "extension/icu/third_party/icu/i18n",
+    ],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_ICU=\\"%s\\"' % DUCKDB_VERSION,
     ],
     deps = [
         ":third_party_headers",

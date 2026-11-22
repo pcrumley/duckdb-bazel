@@ -9,6 +9,9 @@ cc_test(
         "@duckdb//:autocomplete_enabled": ["autocomplete"],
         "//conditions:default": [],
     }) + select({
+        "@duckdb//:icu_enabled": ["icu"],
+        "//conditions:default": [],
+    }) + select({
         "@duckdb//:json_enabled": ["json"],
         "//conditions:default": [],
     }) + select({
