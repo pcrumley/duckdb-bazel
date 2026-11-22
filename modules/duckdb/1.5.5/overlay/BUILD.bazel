@@ -41,6 +41,7 @@ OPTIONAL_EXTENSIONS = {
     "autocomplete": False,
     "json": False,
     "parquet": True,
+    "tpch": False,
 }
 
 [
@@ -365,6 +366,27 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "tpch_extension",
+    srcs = glob(["extension/tpch/**/*.cpp"]),
+    hdrs = glob([
+        "extension/tpch/include/**/*.hpp",
+        "extension/tpch/dbgen/include/**/*.h",
+        "extension/tpch/dbgen/include/**/*.hpp",
+    ]),
+    # dbgen is the TPC's data generator, adapted by upstream; its warnings are off
+    # there too.
+    copts = THIRD_PARTY_COPTS,
+    includes = [
+        "extension/tpch/dbgen/include",
+        "extension/tpch/include",
+    ],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_TPCH=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [":third_party_headers"],
+)
+
 # For each optional extension: its library and the define that tells the loader about
 # it, or nothing when its flag is off.
 [
@@ -390,8 +412,7 @@ cc_library(
     srcs = ["generated/generated_extension_loader.cpp"],
     hdrs = ["generated/generated_extension_headers.hpp"],
     includes = ["generated"],
-    # Private, so that the extensions' include paths and defines stay off the core
-    # library's command lines and changing the set of extensions does not recompile it.
+    # Private, to keep the extensions' include paths and defines to this target.
     implementation_deps = [":core_functions_extension"] + [
         ":%s_if_enabled" % ext
         for ext in OPTIONAL_EXTENSIONS
@@ -440,15 +461,18 @@ cc_library(
     deps = [":third_party_headers"],
 )
 
+# The core library's own sources. It must not depend on :extension_loader, even
+# privately: every header of a dependency is an input to each of these ~1,380 compile
+# actions, so adding an extension to generated_extension_headers.hpp would change all
+# their cache keys and a cold build would recompile the lot.
 cc_library(
-    name = "duckdb",
+    name = "core",
     srcs = glob(
         ["src/**/*.cpp"],
         exclude = ALLOCATOR_SRCS,
     ),
     implementation_deps = [
         ":allocator",
-        ":extension_loader",
         ":fastpforlib",
         ":fmt",
         ":fsst",
@@ -476,12 +500,23 @@ cc_library(
         'DUCKDB_VERSION=\\"%s\\"' % DUCKDB_VERSION,
         'DUCKDB_SOURCE_ID=\\"%s\\"' % DUCKDB_SOURCE_ID,
     ],
-    visibility = ["//visibility:public"],
     # The extensions and several vendored libraries call back into the core library
     # (upstream links them all into one archive). Always linking the core keeps a static
     # link correct with linkers that resolve archives in command-line order. Nearly all of
     # the core is reachable from opening a database anyway: this adds under 1% to a
     # statically linked binary.
     alwayslink = True,
+    deps = [":headers"],
+)
+
+# The public target: the core library plus the extensions selected by the flags.
+cc_library(
+    name = "duckdb",
+    # Private, so that consumers see only the public headers.
+    implementation_deps = [
+        ":core",
+        ":extension_loader",
+    ],
+    visibility = ["//visibility:public"],
     deps = [":headers"],
 )

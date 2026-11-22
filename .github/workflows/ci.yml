@@ -67,6 +67,7 @@ jobs:
           --@duckdb//:autocomplete=false
           --@duckdb//:json=false
           --@duckdb//:parquet=false
+          --@duckdb//:tpch=false
           --@duckdb//:jemalloc=false
           --dynamic_mode=off
 
