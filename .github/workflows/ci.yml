@@ -73,15 +73,24 @@ jobs:
 
       # Bazel refreshes the modification time of every cache entry it uses, so anything
       # older than the start of this build was not needed and would only grow the cache.
+      # Skipped after a failure: a build that stopped early has not touched most of what
+      # the next one needs.
       - name: Trim disk cache
         run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
 
       # Saved from pull requests too (GitHub scopes those caches to the pull request), so
       # that repeated pushes to one do not each pay for a full build. Not from forks:
       # their caches would count against the repository's quota and could evict main's.
+      #
+      # Saved after a failure too, so that a failed test or link does not throw away the
+      # compilation before it. Those saves get a key of their own: cache keys cannot be
+      # overwritten, and a partial cache under the normal key would block the complete
+      # one from the run that fixes the failure.
       - name: Save disk cache
-        if: ${{ !github.event.pull_request.head.repo.fork }}
+        if: ${{ !cancelled() && !github.event.pull_request.head.repo.fork }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/duckdb-bazel-disk-cache
-          key: disk-cache-${{ matrix.os }}-${{ hashFiles('modules/**', 'e2e/**') }}
+          key: >-
+            disk-cache-${{ matrix.os }}-${{ hashFiles('modules/**', 'e2e/**') }}${{
+            job.status != 'success' && format('-failed-{0}-{1}', github.run_id, github.run_attempt) || '' }}
