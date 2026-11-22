@@ -1,7 +1,7 @@
 """Bazel build for DuckDB.
 
 Mirrors upstream's CMake build: the core library in src/, the vendored libraries in
-third_party/ that it always links, and the core_functions and parquet extensions.
+third_party/ that it always links, and the in-tree extensions selected by flags.
 
 Optimisation level, NDEBUG and the C++ standard are left to the consumer's toolchain and
 compilation mode (upstream's release build is the equivalent of `-c opt`).
@@ -32,6 +32,33 @@ config_setting(
     constraint_values = ["@platforms//os:linux"],
     flag_values = {":jemalloc": "true"},
 )
+
+# In-tree extensions that can be linked into the library, and whether they are by default
+# (the defaults match upstream's). core_functions is always linked. Set with, for example:
+#   --@duckdb//:json=true
+#   --@duckdb//:parquet=false
+OPTIONAL_EXTENSIONS = {
+    "json": False,
+    "parquet": True,
+}
+
+[
+    bool_flag(
+        name = ext,
+        build_setting_default = default,
+        visibility = ["//visibility:public"],
+    )
+    for ext, default in OPTIONAL_EXTENSIONS.items()
+]
+
+[
+    config_setting(
+        name = ext + "_enabled",
+        flag_values = {":" + ext: "true"},
+        visibility = ["//visibility:public"],
+    )
+    for ext in OPTIONAL_EXTENSIONS
+]
 
 DUCKDB_VERSION = "v1.5.5"
 
@@ -279,10 +306,10 @@ cc_library(
     deps = [":parquet_third_party_headers"],
 )
 
-# Extensions linked into the library. Adding one here also means adding it to the two
-# files in generated/.
+# Extensions. To add one: add its library below as <name>_extension, add it to
+# OPTIONAL_EXTENSIONS, and add it to the two files in generated/.
 cc_library(
-    name = "core_functions",
+    name = "core_functions_extension",
     srcs = glob(["extension/core_functions/**/*.cpp"]),
     hdrs = glob(["extension/core_functions/include/**/*.hpp"]),
     includes = ["extension/core_functions/include"],
@@ -293,7 +320,21 @@ cc_library(
 )
 
 cc_library(
-    name = "parquet",
+    name = "json_extension",
+    srcs = glob(["extension/json/**/*.cpp"]),
+    hdrs = glob(["extension/json/include/**/*.hpp"]),
+    includes = ["extension/json/include"],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_JSON=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [
+        ":third_party_headers",
+        ":yyjson",
+    ],
+)
+
+cc_library(
+    name = "parquet_extension",
     srcs = glob(["extension/parquet/**/*.cpp"]),
     hdrs = glob(["extension/parquet/include/**/*.hpp"]),
     includes = ["extension/parquet/include"],
@@ -312,23 +353,40 @@ cc_library(
     ],
 )
 
+# For each optional extension: its library and the define that tells the loader about
+# it, or nothing when its flag is off.
+[
+    cc_library(
+        name = ext + "_if_enabled",
+        defines = select({
+            ":%s_enabled" % ext: ["DUCKDB_EXTENSION_%s_LINKED=1" % ext.upper()],
+            "//conditions:default": [],
+        }),
+        deps = select({
+            ":%s_enabled" % ext: [":%s_extension" % ext],
+            "//conditions:default": [],
+        }),
+    )
+    for ext in OPTIONAL_EXTENSIONS
+]
+
 # Registers the linked extensions with the core library. Upstream's CMake generates the
-# two files in generated/ at configure time.
+# two files in generated/ at configure time; here they are fixed files that switch on
+# the DUCKDB_EXTENSION_<NAME>_LINKED defines.
 cc_library(
     name = "extension_loader",
     srcs = ["generated/generated_extension_loader.cpp"],
     hdrs = ["generated/generated_extension_headers.hpp"],
     includes = ["generated"],
-    # Private, so that the extensions' include paths stay off the core library's command
-    # lines and adding an extension does not recompile the core.
-    implementation_deps = [
-        ":core_functions",
-        ":parquet",
+    # Private, so that the extensions' include paths and defines stay off the core
+    # library's command lines and changing the set of extensions does not recompile it.
+    implementation_deps = [":core_functions_extension"] + [
+        ":%s_if_enabled" % ext
+        for ext in OPTIONAL_EXTENSIONS
     ],
     local_defines = COMMON_DEFINES + [
         "GENERATED_EXTENSION_HEADERS=1",
         "DUCKDB_EXTENSION_CORE_FUNCTIONS_LINKED=1",
-        "DUCKDB_EXTENSION_PARQUET_LINKED=1",
     ],
     deps = [":third_party_headers"],
 )

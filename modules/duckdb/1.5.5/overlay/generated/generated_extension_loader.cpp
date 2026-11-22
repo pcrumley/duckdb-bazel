@@ -1,5 +1,6 @@
 // Upstream's CMake build generates this file at configure time from the list of extensions
-// linked into the library. This is the equivalent for the Bazel build.
+// linked into the library. The Bazel build instead sets DUCKDB_EXTENSION_<NAME>_LINKED for
+// each extension whose flag is on.
 
 #include "duckdb/main/extension/generated_extension_loader.hpp"
 #include "duckdb/main/extension_helper.hpp"
@@ -12,15 +13,31 @@ ExtensionLoadResult ExtensionHelper::LoadExtension(DuckDB &db, const std::string
 		db.LoadStaticExtension<CoreFunctionsExtension>();
 		return ExtensionLoadResult::LOADED_EXTENSION;
 	}
+#ifdef DUCKDB_EXTENSION_JSON_LINKED
+	if (extension == "json") {
+		db.LoadStaticExtension<JsonExtension>();
+		return ExtensionLoadResult::LOADED_EXTENSION;
+	}
+#endif
+#ifdef DUCKDB_EXTENSION_PARQUET_LINKED
 	if (extension == "parquet") {
 		db.LoadStaticExtension<ParquetExtension>();
 		return ExtensionLoadResult::LOADED_EXTENSION;
 	}
+#endif
 	return ExtensionLoadResult::NOT_LOADED;
 }
 
 vector<string> LinkedExtensions() {
-	return {"core_functions", "parquet"};
+	return {
+	    "core_functions",
+#ifdef DUCKDB_EXTENSION_JSON_LINKED
+	    "json",
+#endif
+#ifdef DUCKDB_EXTENSION_PARQUET_LINKED
+	    "parquet",
+#endif
+	};
 }
 
 void ExtensionHelper::LoadAllExtensions(DuckDB &db) {

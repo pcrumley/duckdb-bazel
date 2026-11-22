@@ -5,8 +5,8 @@ registry. DuckDB is not in the Bazel Central Registry yet
 ([bazel-central-registry#4890](https://github.com/bazelbuild/bazel-central-registry/issues/4890));
 the aim is to submit this there once it is complete.
 
-**Status: work in progress.** The core library with the `core_functions` and `parquet`
-extensions builds and runs queries on Linux x86_64. Other platforms are untested.
+**Status: work in progress.** The core library and the extensions listed below build and
+run queries on Linux x86_64. Other platforms are untested.
 
 ## Use
 
@@ -27,6 +27,27 @@ Then depend on `@duckdb` from a `cc_library`, `cc_binary` or `cc_test` and
 `#include "duckdb.hpp"` (C++ API) or `"duckdb.h"` (C API).
 
 Requires Bazel 7.2.1 or newer.
+
+### Extensions
+
+DuckDB's in-tree extensions are linked into the library according to flags. The defaults
+match upstream's build.
+
+| Extension | Flag | Default |
+|---|---|---|
+| `core_functions` | always linked | on |
+| `parquet` | `--@duckdb//:parquet` | on |
+| `json` | `--@duckdb//:json` | off |
+
+For example, in `.bazelrc`:
+
+```
+build --@duckdb//:json=true
+build --@duckdb//:parquet=false
+```
+
+The other in-tree extensions (`autocomplete`, `icu`, `tpch`, `tpcds`) are not available
+yet.
 
 ### jemalloc
 

@@ -12,3 +12,6 @@ test --test_output=errors
 # Keeps compiled objects across overlay edits and `bazel clean`: a clean DuckDB build is
 # over ten minutes, and switching a flag back would otherwise recompile it.
 build --disk_cache=~/.cache/duckdb-bazel-disk-cache
+
+# Link every optional extension so the smoke test covers them all.
+build --@duckdb//:json=true
