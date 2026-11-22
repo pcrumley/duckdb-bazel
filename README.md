@@ -6,8 +6,7 @@ registry. DuckDB is not in the Bazel Central Registry yet
 the aim is to submit this there once it is complete.
 
 **Status: work in progress.** The core library with the `core_functions` and `parquet`
-extensions builds and runs queries on Linux x86_64. Other platforms are untested, and
-jemalloc (which upstream enables on Linux) is not used.
+extensions builds and runs queries on Linux x86_64. Other platforms are untested.
 
 ## Use
 
@@ -28,6 +27,25 @@ Then depend on `@duckdb` from a `cc_library`, `cc_binary` or `cc_test` and
 `#include "duckdb.hpp"` (C++ API) or `"duckdb.h"` (C API).
 
 Requires Bazel 7.2.1 or newer.
+
+### jemalloc
+
+On Linux, DuckDB uses its vendored jemalloc for its own allocations, as upstream's builds
+do. It is prefixed (`duckdb_je_*`) and does not replace `malloc` for the rest of your
+process. Upstream does not support it on musl; turn it off there, or anywhere you prefer
+the system allocator:
+
+```
+build --@duckdb//:jemalloc=false
+```
+
+On other operating systems the flag has no effect and the system allocator is used.
+
+### Build time
+
+DuckDB is about 1,750 source files, and a first build takes over ten minutes on 16 cores.
+Bazel caches the result, but CI and fresh checkouts pay it again unless you use
+`--disk_cache` or a remote cache.
 
 ## Layout
 
@@ -64,7 +82,8 @@ bazel shutdown
 bazel test //:smoke_test
 ```
 
-A clean build compiles about 1,700 files and takes roughly twelve minutes on 16 cores.
+The workspace's `.bazelrc` sets a disk cache in `~/.cache/duckdb-bazel-disk-cache`, so
+only the first build pays the full compile.
 
 ## Licence
 

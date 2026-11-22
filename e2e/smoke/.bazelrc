@@ -8,3 +8,7 @@ common --lockfile_mode=off
 
 build --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
 test --test_output=errors
+
+# Keeps compiled objects across overlay edits and `bazel clean`: a clean DuckDB build is
+# over ten minutes, and switching a flag back would otherwise recompile it.
+build --disk_cache=~/.cache/duckdb-bazel-disk-cache

@@ -7,6 +7,7 @@ Optimisation level, NDEBUG and the C++ standard are left to the consumer's toolc
 compilation mode (upstream's release build is the equivalent of `-c opt`).
 """
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:private"])
@@ -14,6 +15,23 @@ package(default_visibility = ["//visibility:private"])
 licenses(["notice"])  # MIT
 
 exports_files(["LICENSE"])
+
+# Use DuckDB's vendored jemalloc for its own allocations, as upstream does by default on
+# 64-bit glibc Linux. It is prefixed (duckdb_je_*) and does not replace malloc for the
+# rest of the process. Only has an effect on Linux. Turn it off for musl, where upstream
+# does not support it:
+#   --@duckdb//:jemalloc=false
+bool_flag(
+    name = "jemalloc",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "jemalloc_enabled",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {":jemalloc": "true"},
+)
 
 DUCKDB_VERSION = "v1.5.5"
 
@@ -81,6 +99,16 @@ cc_library(
         "third_party/libpg_query/grammar/grammar.cpp",
         "third_party/utf8proc/utf8proc_data.cpp",
     ],
+    deps = [":headers"],
+)
+
+cc_library(
+    name = "jemalloc_lib",
+    srcs = glob(["third_party/jemalloc/src/*.c"]),
+    hdrs = glob(["third_party/jemalloc/include/**/*.h"]),
+    copts = THIRD_PARTY_COPTS + ["-std=gnu99"],
+    includes = ["third_party/jemalloc/include"],
+    local_defines = COMMON_DEFINES,
     deps = [":headers"],
 )
 
@@ -305,14 +333,51 @@ cc_library(
     deps = [":third_party_headers"],
 )
 
+# The only core sources that depend on whether jemalloc is enabled. They are a separate
+# target so that flipping the flag recompiles these and not the whole core library.
+ALLOCATOR_SRCS = [
+    "src/common/allocator/allocator_jemalloc.cpp",
+    "src/common/allocator/allocator_standard.cpp",
+    "src/parallel/task_scheduler.cpp",
+]
+
+CORE_DEFINES = COMMON_DEFINES + [
+    "DUCKDB",
+    "DUCKDB_MAIN_LIBRARY",
+]
+
+cc_library(
+    name = "allocator",
+    srcs = ALLOCATOR_SRCS,
+    # allocator_jemalloc.cpp uses StringUtil without including its header. Upstream never
+    # notices because its unity build compiles the file together with allocator.cpp.
+    copts = select({
+        ":jemalloc_enabled": [
+            "-include",
+            "duckdb/common/string_util.hpp",
+        ],
+        "//conditions:default": [],
+    }),
+    # Private, to keep jemalloc's include path off the core library's command lines.
+    implementation_deps = select({
+        ":jemalloc_enabled": [":jemalloc_lib"],
+        "//conditions:default": [],
+    }),
+    local_defines = CORE_DEFINES + select({
+        ":jemalloc_enabled": ["DUCKDB_ENABLE_JEMALLOC"],
+        "//conditions:default": [],
+    }),
+    deps = [":third_party_headers"],
+)
+
 cc_library(
     name = "duckdb",
     srcs = glob(
         ["src/**/*.cpp"],
-        # The jemalloc-backed allocator; allocator_standard.cpp is its counterpart.
-        exclude = ["src/common/allocator/allocator_jemalloc.cpp"],
+        exclude = ALLOCATOR_SRCS,
     ),
     implementation_deps = [
+        ":allocator",
         ":extension_loader",
         ":fastpforlib",
         ":fmt",
@@ -337,9 +402,7 @@ cc_library(
             "-lm",
         ],
     }),
-    local_defines = COMMON_DEFINES + [
-        "DUCKDB",
-        "DUCKDB_MAIN_LIBRARY",
+    local_defines = CORE_DEFINES + [
         'DUCKDB_VERSION=\\"%s\\"' % DUCKDB_VERSION,
         'DUCKDB_SOURCE_ID=\\"%s\\"' % DUCKDB_SOURCE_ID,
     ],
