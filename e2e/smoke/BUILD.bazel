@@ -33,3 +33,12 @@ cc_test(
     }),
     deps = ["@duckdb"],
 )
+
+# Runs a query through the command-line shell.
+cc_test(
+    name = "shell_test",
+    srcs = ["shell_test.cc"],
+    args = ["$(rlocationpath @duckdb//tools/shell:duckdb)"],
+    data = ["@duckdb//tools/shell:duckdb"],
+    deps = ["@rules_cc//cc/runfiles"],
+)

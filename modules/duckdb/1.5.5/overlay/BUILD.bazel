@@ -693,6 +693,37 @@ cc_library(
     deps = [":headers"],
 )
 
+# The command-line shell. The binary itself is //tools/shell:duckdb, a separate package
+# so that the executable is called `duckdb`, as upstream's is:
+#   bazel run @duckdb//tools/shell:duckdb
+# Its sources are compiled here, next to the targets and flags they need.
+cc_library(
+    name = "shell",
+    srcs = ["//tools/shell:srcs"],
+    hdrs = ["//tools/shell:hdrs"],
+    copts = DUCKDB_COPTS,
+    includes = [
+        "tools/shell/include",
+        "tools/shell/linenoise/include",
+    ],
+    local_defines = [
+        "HAVE_LINENOISE=1",
+        "USE_DUCKDB_SHELL_WRAPPER",
+    ] + select({
+        # Completion calls the autocomplete extension directly when it is linked.
+        ":autocomplete_enabled": ["SHELL_INLINE_AUTOCOMPLETE"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//tools/shell:__pkg__"],
+    deps = [
+        ":autocomplete_if_enabled",
+        ":duckdb",
+        ":third_party_headers",
+    ],
+    # Holds main().
+    alwayslink = True,
+)
+
 # Upstream's test suite: its Catch-based runner, the C++ API tests and the SQL logic
 # tests under test/. Run it with
 #   bazel test @duckdb//:unittest
