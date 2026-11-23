@@ -59,10 +59,7 @@ jobs:
           # "disk-cache-ubuntu-24.04-" also matches the ubuntu-24.04-arm caches, and the
           # x86_64 job was restoring those and compiling everything again.
           key: disk-cache-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('modules/**', 'e2e/**') }}
-          # The second prefix finds caches saved before the architecture was added.
-          restore-keys: |
-            disk-cache-${{ matrix.os }}-${{ runner.arch }}-
-            disk-cache-${{ matrix.os }}-
+          restore-keys: disk-cache-${{ matrix.os }}-${{ runner.arch }}-
 
       - name: Mark start of build
         run: touch "$RUNNER_TEMP/build-start"
