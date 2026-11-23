@@ -14,6 +14,15 @@ namespace {
 
 int failures = 0;
 
+// The first value of the first row. Written with the row iterator, which is the same in
+// DuckDB 1.x and 2.x: what Connection::Query returns changed between them.
+duckdb::Value FirstValue(duckdb::QueryResult &result) {
+  for (auto &row : result) {
+    return row.GetBaseValue(0);
+  }
+  return duckdb::Value();
+}
+
 // Runs a query that returns a single value and compares it, as text, with `expected`.
 void Check(duckdb::Connection &con, const std::string &sql, const std::string &expected) {
   auto result = con.Query(sql);
@@ -22,7 +31,7 @@ void Check(duckdb::Connection &con, const std::string &sql, const std::string &e
     failures++;
     return;
   }
-  auto actual = result->GetValue(0, 0).ToString();
+  auto actual = FirstValue(*result).ToString();
   if (actual != expected) {
     std::cerr << "FAILED: " << sql << "\n  expected " << expected << ", got " << actual << "\n";
     failures++;
@@ -34,7 +43,7 @@ void Check(duckdb::Connection &con, const std::string &sql, const std::string &e
 bool Expect(duckdb::Connection &con, const std::set<std::string> &expected, const std::string &extension) {
   auto result = con.Query("SELECT count(*) FROM duckdb_extensions() WHERE loaded AND extension_name = '" +
                           extension + "'");
-  bool loaded = !result->HasError() && result->GetValue(0, 0).GetValue<int64_t>() == 1;
+  bool loaded = !result->HasError() && FirstValue(*result).GetValue<int64_t>() == 1;
   bool want = expected.count(extension) > 0;
   if (loaded != want) {
     std::cerr << "FAILED: extension " << extension << " is " << (loaded ? "loaded" : "not loaded")

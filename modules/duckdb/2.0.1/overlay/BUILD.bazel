@@ -1,0 +1,1017 @@
+"""Bazel build for DuckDB.
+
+Mirrors upstream's CMake build: the core library in src/, the vendored libraries in
+third_party/ that it always links, and the in-tree extensions selected by flags.
+
+NDEBUG and the C++ standard are left to the consumer's toolchain and compilation mode.
+Upstream's release build is the equivalent of `-c opt`, and as there DuckDB is then
+compiled with -O3 rather than the toolchain's usual -O2.
+"""
+
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load(":unity.bzl", "unity_cc_library")
+
+package(default_visibility = ["//visibility:private"])
+
+licenses(["notice"])  # MIT
+
+exports_files(["LICENSE"])
+
+# Use DuckDB's vendored jemalloc for its own allocations, as upstream does by default on
+# 64-bit glibc Linux. It is prefixed (duckdb_je_*) and does not replace malloc for the
+# rest of the process. Only has an effect on Linux. Turn it off for musl, where upstream
+# does not support it:
+#   --@duckdb//:jemalloc=false
+bool_flag(
+    name = "jemalloc",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "jemalloc_enabled",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {":jemalloc": "true"},
+)
+
+# In-tree extensions that can be linked into the library, and whether they are by default
+# (the defaults match upstream's). core_functions is always linked. Set with, for example:
+#   --@duckdb//:json=true
+#   --@duckdb//:parquet=false
+OPTIONAL_EXTENSIONS = {
+    "autocomplete": False,
+    "icu": False,
+    "json": False,
+    "parquet": True,
+    "tpcds": False,
+    "tpch": False,
+}
+
+[
+    bool_flag(
+        name = ext,
+        build_setting_default = default,
+        visibility = ["//visibility:public"],
+    )
+    for ext, default in OPTIONAL_EXTENSIONS.items()
+]
+
+[
+    config_setting(
+        name = ext + "_enabled",
+        flag_values = {":" + ext: "true"},
+        visibility = ["//visibility:public"],
+    )
+    for ext in OPTIONAL_EXTENSIONS
+]
+
+DUCKDB_VERSION = "v2.0.1"
+
+# Short commit id of the release tag, as reported by `PRAGMA version`.
+DUCKDB_SOURCE_ID = "8d78114e90"
+
+VERSION_PARTS = DUCKDB_VERSION[1:].split(".")
+
+# What upstream's CMake build defines for every translation unit.
+COMMON_DEFINES = [
+    "DUCKDB_BUILD_LIBRARY",
+    "DUCKDB_MAJOR_VERSION=" + VERSION_PARTS[0],
+    "DUCKDB_MINOR_VERSION=" + VERSION_PARTS[1],
+    "DUCKDB_PATCH_VERSION=" + VERSION_PARTS[2],
+] + select({
+    # Upstream defines it where unistd.h declares fdatasync.
+    "@platforms//os:linux": ["DUCKDB_HAVE_FDATASYNC=1"],
+    "//conditions:default": [],
+}) + select({
+    # DuckDB compiles with NDEBUG (a release build), with DEBUG, or with this, which turns
+    # its assertions on without the rest of a debug build. With none of the three, as in
+    # Bazel's default compilation mode, it does not compile: its assertions are on but the
+    # code they call is left out. Selected here because the opt/non-opt condition is
+    # defined below.
+    ":opt": [],
+    "//conditions:default": ["DUCKDB_FORCE_ASSERT"],
+})
+
+# What upstream's CMake build passes to MSVC. Selected by operating system, so it assumes
+# the Windows toolchain takes MSVC-style flags (MSVC or clang-cl).
+MSVC_COPTS = [
+    "/bigobj",
+    "/utf-8",
+    "/D_CRT_SECURE_NO_WARNINGS",
+    "/D_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS=1",
+    "/wd4244",
+    "/wd4267",
+    "/wd4200",
+]
+
+# Upstream's release build uses -O3 with GCC and Clang, where Bazel's toolchains use -O2
+# for `-c opt`. These come after the toolchain's flags, so -O3 wins. MSVC is left alone:
+# both builds use /O2 there, its highest level.
+config_setting(
+    name = "opt",
+    values = {"compilation_mode": "opt"},
+)
+
+config_setting(
+    name = "opt_windows",
+    constraint_values = ["@platforms//os:windows"],
+    values = {"compilation_mode": "opt"},
+)
+
+OPT_COPTS = select({
+    ":opt_windows": [],
+    ":opt": ["-O3"],
+    "//conditions:default": [],
+})
+
+DUCKDB_COPTS = OPT_COPTS + select({
+    "@platforms//os:windows": MSVC_COPTS,
+    "//conditions:default": [],
+})
+
+# Upstream compiles most vendored code with warnings off. It also uses
+# -fvisibility=hidden for some of it, which is left out here: Bazel links each cc_library
+# as its own shared object in dynamic mode, and the core library needs those symbols.
+THIRD_PARTY_COPTS = OPT_COPTS + select({
+    "@platforms//os:windows": MSVC_COPTS + ["/W0"],
+    "//conditions:default": ["-w"],
+})
+
+# Include directories upstream puts on the command line of every translation unit.
+THIRD_PARTY_INCLUDES = [
+    "third_party/concurrentqueue",
+    "third_party/fast_float",
+    "third_party/fastpforlib",
+    "third_party/fmt/include",
+    "third_party/fsst",
+    "third_party/httplib",
+    "third_party/hyperloglog",
+    "third_party/jaro_winkler",
+    "third_party/mbedtls/include",
+    "third_party/miniz",
+    "third_party/pcg",
+    "third_party/pdqsort",
+    "third_party/re2",
+    "third_party/ska_sort",
+    "third_party/skiplist",
+    "third_party/tdigest",
+    "third_party/utf8proc/include",
+    "third_party/vergesort",
+    "third_party/yyjson/include",
+    "third_party/zstd/include",
+]
+
+# The public API: only src/include is visible to consumers.
+cc_library(
+    name = "headers",
+    hdrs = glob([
+        "src/include/**/*.h",
+        "src/include/**/*.hpp",
+    ]),
+    includes = ["src/include"],
+)
+
+# On Windows the API macros in duckdb/common/winapi.hpp default to dllimport, which is
+# right for code that uses duckdb.dll. Code that links DuckDB statically has to see this
+# define instead. DuckDB's own sources see neither: as in upstream's build, they are
+# compiled with DUCKDB_BUILD_LIBRARY, which exports the API, and the same objects serve
+# the static library and the DLL.
+cc_library(
+    name = "static_build",
+    defines = select({
+        "@platforms//os:windows": ["DUCKDB_STATIC_BUILD"],
+        "//conditions:default": [],
+    }),
+)
+
+# Headers of every vendored library, with upstream's include paths. Internal: the public
+# target depends on it through implementation_deps so the paths do not reach consumers.
+cc_library(
+    name = "third_party_headers",
+    hdrs = glob(
+        [
+            "third_party/**/*.h",
+            "third_party/**/*.hpp",
+        ],
+        exclude = [
+            "third_party/catch/**",
+            "third_party/jemalloc/**",
+        ],
+    ),
+    includes = THIRD_PARTY_INCLUDES,
+    # A source that is #included by another rather than compiled on its own.
+    textual_hdrs = ["third_party/utf8proc/utf8proc_data.cpp"],
+    deps = [":headers"],
+)
+
+cc_library(
+    name = "jemalloc_lib",
+    srcs = glob(["third_party/jemalloc/src/*.c"]),
+    hdrs = glob(["third_party/jemalloc/include/**/*.h"]),
+    copts = THIRD_PARTY_COPTS + ["-std=gnu99"],
+    includes = ["third_party/jemalloc/include"],
+    local_defines = COMMON_DEFINES,
+    deps = [":headers"],
+)
+
+cc_library(
+    name = "fastpforlib",
+    srcs = glob(["third_party/fastpforlib/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "fmt",
+    srcs = glob(["third_party/fmt/**/*.cc"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "fsst",
+    srcs = glob(["third_party/fsst/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "hyperloglog",
+    srcs = glob(["third_party/hyperloglog/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "mbedtls",
+    srcs = glob(["third_party/mbedtls/**/*.cpp"]),
+    copts = DUCKDB_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "miniz",
+    srcs = glob(["third_party/miniz/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "re2",
+    srcs = glob(["third_party/re2/**/*.cc"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES + ["RE2_ON_VALGRIND"] + select({
+        "@platforms//os:windows": [
+            "UNICODE",
+            "_UNICODE",
+            "STRICT",
+            "NOMINMAX",
+            "_SCL_SECURE_NO_WARNINGS",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "skiplist",
+    srcs = glob(["third_party/skiplist/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "utf8proc",
+    srcs = glob(
+        ["third_party/utf8proc/**/*.cpp"],
+        exclude = ["third_party/utf8proc/utf8proc_data.cpp"],
+    ),
+    copts = DUCKDB_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "yyjson",
+    srcs = glob(["third_party/yyjson/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "zstd",
+    srcs = glob(["third_party/zstd/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":third_party_headers"],
+)
+
+# Vendored libraries used only by the parquet extension.
+cc_library(
+    name = "parquet_third_party_headers",
+    includes = [
+        "third_party/brotli/include",
+        "third_party/lz4",
+        "third_party/parquet",
+        "third_party/snappy",
+        "third_party/thrift",
+    ],
+    # Template implementations that thrift's headers #include.
+    textual_hdrs = glob(["third_party/thrift/**/*.tcc"]),
+    deps = [":third_party_headers"],
+)
+
+cc_library(
+    name = "brotli",
+    srcs = glob(["third_party/brotli/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+cc_library(
+    name = "lz4",
+    srcs = glob(["third_party/lz4/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+cc_library(
+    name = "parquet_format",
+    srcs = glob(["third_party/parquet/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+cc_library(
+    name = "snappy",
+    srcs = glob(
+        ["third_party/snappy/**/*.cc"],
+        exclude = ["third_party/snappy/snappy-stubs-internal.cc"],
+    ),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+cc_library(
+    name = "thrift",
+    srcs = glob(["third_party/thrift/**/*.cpp"]),
+    copts = THIRD_PARTY_COPTS,
+    local_defines = COMMON_DEFINES,
+    deps = [":parquet_third_party_headers"],
+)
+
+# The vendored libraries the core library links. Each extension depends on them too:
+# upstream links everything into one archive, so an extension may call any of them
+# (core_functions uses skiplist, for one). Without the dependency, a linker that
+# resolves archives in command-line order can meet a library before the extension that
+# needs it and drop the members it wants.
+cc_library(
+    name = "vendored_libs",
+    deps = [
+        ":fastpforlib",
+        ":fmt",
+        ":fsst",
+        ":hyperloglog",
+        ":mbedtls",
+        ":miniz",
+        ":re2",
+        ":skiplist",
+        ":utf8proc",
+        ":yyjson",
+        ":zstd",
+    ],
+)
+
+# For each extension, the function that describes it to the core library's registry of
+# statically linked extensions, generated from upstream's template as its CMake build
+# does.
+[
+    expand_template(
+        name = ext + "_describe",
+        out = "generated/%s_describe.c" % ext,
+        substitutions = {
+            "@NAME@": ext,
+            "@ENTRY_DECLARATION@": "void %s_duckdb_cpp_init(void *loader);" % ext,
+            "@EXTENSION_VERSION@": '"%s"' % DUCKDB_VERSION,
+            "@API_VERSION@": '"%s"' % DUCKDB_VERSION,
+            "@ENTRY_FIELD@": "entry_cpp",
+            "@ENTRY_NAME@": ext + "_duckdb_cpp_init",
+        },
+        template = "extension/loader/extension_describe.c.in",
+    )
+    for ext in ["core_functions"] + list(OPTIONAL_EXTENSIONS)
+]
+
+[
+    cc_library(
+        name = ext + "_describe_lib",
+        srcs = ["generated/%s_describe.c" % ext],
+        copts = DUCKDB_COPTS,
+        local_defines = COMMON_DEFINES,
+        deps = [":headers"],
+    )
+    for ext in ["core_functions"] + list(OPTIONAL_EXTENSIONS)
+]
+
+# Extensions. Like upstream, each compiles its subdirectories as unity builds and its
+# top-level files one by one; tpch, tpcds and icu are not unity builds at all.
+#
+# To add one: add its library below as <name>_extension, add it to
+# OPTIONAL_EXTENSIONS, and add it to bazel/static_extension_loader.c.
+unity_cc_library(
+    name = "core_functions_extension",
+    srcs = glob(["extension/core_functions/**/*.cpp"]),
+    hdrs = glob(["extension/core_functions/include/**/*.hpp"]),
+    copts = DUCKDB_COPTS,
+    includes = ["extension/core_functions/include"],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_CORE_FUNCTIONS=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    non_unity_dirs = ["extension/core_functions"],
+    deps = [
+        ":core_functions_describe_lib",
+        ":third_party_headers",
+        ":vendored_libs",
+    ],
+)
+
+unity_cc_library(
+    name = "autocomplete_extension",
+    srcs = glob(["extension/autocomplete/**/*.cpp"]),
+    hdrs = glob(["extension/autocomplete/include/**/*.hpp"]),
+    copts = DUCKDB_COPTS,
+    includes = ["extension/autocomplete/include"],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_AUTOCOMPLETE=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    non_unity_dirs = ["extension/autocomplete"],
+    deps = [
+        ":autocomplete_describe_lib",
+        ":third_party_headers",
+        ":vendored_libs",
+    ],
+)
+
+# Upstream compiles it with warnings off, and file by file.
+cc_library(
+    name = "icu_extension",
+    srcs = glob(["extension/icu/**/*.cpp"]),
+    hdrs = glob(["extension/icu/**/*.hpp"]),
+    copts = THIRD_PARTY_COPTS,
+    includes = [
+        "extension/icu/collation/include",
+        "extension/icu/datetime/include",
+        "extension/icu/include",
+    ],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_ICU=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [
+        ":icu_describe_lib",
+        ":third_party_headers",
+        ":vendored_libs",
+    ],
+)
+
+unity_cc_library(
+    name = "json_extension",
+    srcs = glob(["extension/json/**/*.cpp"]),
+    hdrs = glob(["extension/json/include/**/*.hpp"]),
+    copts = DUCKDB_COPTS,
+    includes = ["extension/json/include"],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_JSON=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    non_unity_dirs = ["extension/json"],
+    deps = [
+        ":json_describe_lib",
+        ":third_party_headers",
+        ":vendored_libs",
+    ],
+)
+
+unity_cc_library(
+    name = "parquet_extension",
+    srcs = glob(["extension/parquet/**/*.cpp"]),
+    hdrs = glob(["extension/parquet/include/**/*.hpp"]),
+    copts = DUCKDB_COPTS,
+    includes = ["extension/parquet/include"],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_PARQUET=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    non_unity_dirs = ["extension/parquet"],
+    deps = [
+        ":brotli",
+        ":lz4",
+        ":miniz",
+        ":parquet_describe_lib",
+        ":parquet_format",
+        ":parquet_third_party_headers",
+        ":snappy",
+        ":thrift",
+        ":vendored_libs",
+    ],
+)
+
+cc_library(
+    name = "tpcds_extension",
+    srcs = glob(["extension/tpcds/**/*.cpp"]),
+    hdrs = glob([
+        "extension/tpcds/include/**/*.hpp",
+        "extension/tpcds/dsdgen/include/**/*.h",
+        "extension/tpcds/dsdgen/include/**/*.hpp",
+    ]),
+    # dsdgen is the TPC's data generator, adapted by upstream; its warnings are off
+    # there too.
+    copts = THIRD_PARTY_COPTS,
+    includes = [
+        "extension/tpcds/dsdgen/include",
+        "extension/tpcds/dsdgen/include/dsdgen-c",
+        "extension/tpcds/include",
+    ],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_TPCDS=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [
+        ":third_party_headers",
+        ":tpcds_describe_lib",
+        ":vendored_libs",
+    ],
+)
+
+cc_library(
+    name = "tpch_extension",
+    srcs = glob(["extension/tpch/**/*.cpp"]),
+    hdrs = glob([
+        "extension/tpch/include/**/*.hpp",
+        "extension/tpch/dbgen/include/**/*.h",
+        "extension/tpch/dbgen/include/**/*.hpp",
+    ]),
+    # dbgen is the TPC's data generator, adapted by upstream; its warnings are off
+    # there too.
+    copts = THIRD_PARTY_COPTS,
+    includes = [
+        "extension/tpch/dbgen/include",
+        "extension/tpch/include",
+    ],
+    local_defines = COMMON_DEFINES + [
+        'EXT_VERSION_TPCH=\\"%s\\"' % DUCKDB_VERSION,
+    ],
+    deps = [
+        ":third_party_headers",
+        ":tpch_describe_lib",
+        ":vendored_libs",
+    ],
+)
+
+# For each optional extension: its library and the define that tells the loader about
+# it, or nothing when its flag is off.
+[
+    cc_library(
+        name = ext + "_if_enabled",
+        defines = select({
+            ":%s_enabled" % ext: ["DUCKDB_EXTENSION_%s_LINKED=1" % ext.upper()],
+            "//conditions:default": [],
+        }),
+        deps = select({
+            ":%s_enabled" % ext: [":%s_extension" % ext],
+            "//conditions:default": [],
+        }),
+    )
+    for ext in OPTIONAL_EXTENSIONS
+]
+
+# Registers the linked extensions with the core library before main() runs. Upstream's
+# CMake generates the loader at configure time from the list of extensions; here it is a
+# fixed file that switches on the DUCKDB_EXTENSION_<NAME>_LINKED defines.
+cc_library(
+    name = "extension_loader",
+    srcs = [
+        "bazel/static_extension_loader.c",
+        "extension/loader/static_extension_autoregister.cpp",
+    ],
+    copts = DUCKDB_COPTS,
+    # Private, to keep the extensions' include paths and defines to this target.
+    implementation_deps = [":core_functions_extension"] + [
+        ":%s_if_enabled" % ext
+        for ext in OPTIONAL_EXTENSIONS
+    ],
+    local_defines = COMMON_DEFINES,
+    deps = [":headers"],
+    # Nothing refers to the object that does the registering.
+    alwayslink = True,
+)
+
+# The only core sources that depend on whether jemalloc is enabled. They are a separate
+# target so that flipping the flag recompiles these and not the whole core library.
+ALLOCATOR_SRCS = [
+    "src/common/allocator/allocator_jemalloc.cpp",
+    "src/common/allocator/allocator_standard.cpp",
+    "src/parallel/task_scheduler.cpp",
+]
+
+CORE_DEFINES = COMMON_DEFINES + [
+    "DUCKDB",
+    "DUCKDB_MAIN_LIBRARY",
+]
+
+cc_library(
+    name = "allocator",
+    srcs = ALLOCATOR_SRCS,
+    # allocator_jemalloc.cpp uses StringUtil without including its header. Upstream never
+    # notices because its unity build compiles the file together with allocator.cpp.
+    copts = DUCKDB_COPTS + select({
+        ":jemalloc_enabled": [
+            "-include",
+            "duckdb/common/string_util.hpp",
+        ],
+        "//conditions:default": [],
+    }),
+    # Private, to keep jemalloc's include path off the core library's command lines.
+    implementation_deps = select({
+        ":jemalloc_enabled": [":jemalloc_lib"],
+        "//conditions:default": [],
+    }),
+    local_defines = CORE_DEFINES + select({
+        ":jemalloc_enabled": ["DUCKDB_ENABLE_JEMALLOC"],
+        "//conditions:default": [],
+    }),
+    deps = [":third_party_headers"],
+)
+
+# The core library's own sources. It must not depend on :extension_loader, even
+# privately: every header of a dependency is an input to each of these ~1,380 compile
+# actions, so adding an extension to generated_extension_headers.hpp would change all
+# their cache keys and a cold build would recompile the lot.
+#
+# Compiled one directory at a time, as upstream does, apart from the three directories
+# upstream compiles file by file.
+unity_cc_library(
+    name = "core",
+    srcs = glob(
+        ["src/**/*.cpp"],
+        exclude = ALLOCATOR_SRCS,
+    ),
+    copts = DUCKDB_COPTS,
+    implementation_deps = [
+        ":allocator",
+        ":fastpforlib",
+        ":fmt",
+        ":fsst",
+        ":hyperloglog",
+        ":mbedtls",
+        ":miniz",
+        ":re2",
+        ":skiplist",
+        ":third_party_headers",
+        ":utf8proc",
+        ":yyjson",
+        ":zstd",
+    ],
+    linkopts = select({
+        "@platforms//os:windows": [
+            "-DEFAULTLIB:ws2_32.lib",
+            "-DEFAULTLIB:rstrtmgr.lib",
+            "-DEFAULTLIB:bcrypt.lib",
+        ],
+        "//conditions:default": [
+            "-lpthread",
+            "-ldl",
+            "-lm",
+        ],
+    }),
+    local_defines = CORE_DEFINES + [
+        'DUCKDB_VERSION=\\"%s\\"' % DUCKDB_VERSION,
+        'DUCKDB_SOURCE_ID=\\"%s\\"' % DUCKDB_SOURCE_ID,
+    ],
+    non_unity_dirs = [
+        "src/common/vector_operations",
+        "src/main/extension",
+    ],
+    # The built-in HTTP client. Its headers define macros that break the files after it.
+    non_unity_srcs = ["src/main/http/http_client_httplib.cpp"],
+    deps = [":headers"],
+    # The extensions and several vendored libraries call back into the core library
+    # (upstream links them all into one archive). Always linking the core keeps a static
+    # link correct with linkers that resolve archives in command-line order. Nearly all of
+    # the core is reachable from opening a database anyway: this adds under 1% to a
+    # statically linked binary.
+    alwayslink = True,
+)
+
+# The public target: the core library plus the extensions selected by the flags.
+cc_library(
+    name = "duckdb",
+    # Private, so that consumers see only the public headers.
+    implementation_deps = [
+        ":core",
+        ":extension_loader",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":headers",
+        ":static_build",
+    ],
+)
+
+# DuckDB as one shared library holding the core and the extensions selected by the
+# flags: libduckdb.so, libduckdb.dylib or duckdb.dll. This is the file itself, for
+# packaging or for use outside Bazel. To link a Bazel target against it, depend on
+# :duckdb_shared below.
+cc_shared_library(
+    name = "libduckdb",
+    shared_lib_name = select({
+        "@platforms//os:macos": "libduckdb.dylib",
+        "@platforms//os:windows": "duckdb.dll",
+        "//conditions:default": "libduckdb.so",
+    }),
+    user_link_flags = select({
+        "@platforms//os:macos": ["-Wl,-install_name,@rpath/libduckdb.dylib"],
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-Wl,-soname,libduckdb.so"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [":duckdb"],
+)
+
+# The import library that goes with duckdb.dll.
+filegroup(
+    name = "libduckdb_interface",
+    srcs = [":libduckdb"],
+    output_group = "interface_library",
+)
+
+# DuckDB linked dynamically: depend on this instead of :duckdb to use the shared library
+# above. A binary must not get both, or it would hold two copies of DuckDB.
+cc_import(
+    name = "duckdb_shared",
+    interface_library = select({
+        "@platforms//os:windows": ":libduckdb_interface",
+        "//conditions:default": None,
+    }),
+    shared_library = ":libduckdb",
+    visibility = ["//visibility:public"],
+    deps = [":headers"],
+)
+
+# The command-line shell. The binary itself is //tools/shell:duckdb, a separate package
+# so that the executable is called `duckdb`, as upstream's is:
+#   bazel run @duckdb//tools/shell:duckdb
+# Its sources are compiled here, next to the targets and flags they need.
+cc_library(
+    name = "shell",
+    srcs = ["//tools/shell:srcs"],
+    hdrs = ["//tools/shell:hdrs"],
+    copts = DUCKDB_COPTS,
+    includes = [
+        "tools/shell/include",
+        "tools/shell/linenoise/include",
+    ],
+    local_defines = [
+        "HAVE_LINENOISE=1",
+        "USE_DUCKDB_SHELL_WRAPPER",
+    ] + select({
+        # Completion calls the autocomplete extension directly when it is linked.
+        ":autocomplete_enabled": ["SHELL_INLINE_AUTOCOMPLETE"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//tools/shell:__pkg__"],
+    deps = [
+        ":autocomplete_if_enabled",
+        ":duckdb",
+        ":third_party_headers",
+    ],
+    # Holds main().
+    alwayslink = True,
+)
+
+# Upstream's test suite: its Catch-based runner, the C++ API tests and the SQL logic
+# tests under test/. Run it with
+#   bazel test @duckdb//:unittest
+# It tests the library as configured, so tests that need an extension whose flag is off
+# are skipped.
+TEST_COPTS = DUCKDB_COPTS + select({
+    "@platforms//os:windows": [],
+    "//conditions:default": ["-w"],
+})
+
+TEST_DEFINES = COMMON_DEFINES + [
+    # Upstream sets it for the tests of the version 2 C API and of the C++ wrapper.
+    "DUCKDB_V2_API_ALLOW_UNSTABLE=1",
+    # Defaults for running the binary by hand from the source root. Under `bazel test`
+    # the entry point in bazel/unittest_main.cpp passes the real locations.
+    'DUCKDB_ROOT_DIRECTORY=\\".\\"',
+    'DUCKDB_BUILD_DIRECTORY=\\".\\"',
+]
+
+TEST_DEPS = [
+    ":core_functions_extension",
+    ":extension_loader",
+    ":headers",
+    ":static_build",
+    ":test_headers",
+    ":third_party_headers",
+] + [
+    ":%s_if_enabled" % ext
+    for ext in OPTIONAL_EXTENSIONS
+]
+
+cc_library(
+    name = "test_headers",
+    testonly = True,
+    hdrs = glob([
+        "test/**/*.h",
+        "test/**/*.hpp",
+        "third_party/catch/*.hpp",
+        "tools/cpp/**/*.hpp",
+    ]),
+    includes = [
+        "test/extension/debug_fs/include",
+        "test/include",
+        "third_party/catch",
+        "tools/cpp",
+        "tools/cpp/tests",
+    ],
+)
+
+# Sources that only build with the tpch extension.
+TPCH_TEST_SRCS = [
+    "test/api/test_tpch_with_relations.cpp",
+    "test/api/test_tpch_with_streaming.cpp",
+]
+
+# And with the tpcds extension.
+TPCDS_TEST_SRCS = ["test/api/test_tpcds_with_streaming.cpp"]
+
+# Sources upstream leaves out on Windows.
+NON_WINDOWS_TEST_SRCS = ["test/api/test_read_only.cpp"] + glob(["test/persistence/**/*.cpp"])
+
+# A small extension written against the C++ wrapper of the C API, which one of the tests
+# registers as a statically linked extension.
+cc_library(
+    name = "unittest_static_demo_extension",
+    testonly = True,
+    srcs = ["test/api/capi/v2/static_extension/cpp_api_static_demo.cpp"],
+    copts = TEST_COPTS,
+    local_defines = TEST_DEFINES + [
+        "DUCKDB_EXTENSION_API_VERSION_UNSTABLE=" + DUCKDB_VERSION,
+        "DUCKDB_EXTENSION_NAME=cpp_api_static_demo",
+    ],
+    deps = TEST_DEPS,
+)
+
+# test_radix_ht_sink.cpp uses BufferManager without including its header. Upstream never
+# notices because its unity build compiles the file after others that do.
+cc_library(
+    name = "unittest_radix_ht_sink",
+    testonly = True,
+    srcs = ["test/common/test_radix_ht_sink.cpp"],
+    copts = TEST_COPTS + select({
+        "@platforms//os:windows": ["/FIduckdb/storage/buffer_manager.hpp"],
+        "//conditions:default": [
+            "-include",
+            "duckdb/storage/buffer_manager.hpp",
+        ],
+    }),
+    local_defines = TEST_DEFINES,
+    deps = TEST_DEPS,
+    alwayslink = True,
+)
+
+cc_library(
+    name = "unittest_tests_globbed",
+    testonly = True,
+    srcs = glob(
+        [
+            "test/**/*.cpp",
+            # The tests of the C++ wrapper around the C API.
+            "tools/cpp/tests/*.cpp",
+        ],
+        exclude = TPCH_TEST_SRCS + TPCDS_TEST_SRCS + NON_WINDOWS_TEST_SRCS + [
+            "test/unittest.cpp",
+            # Compiled by :unittest_radix_ht_sink.
+            "test/common/test_radix_ht_sink.cpp",
+            # Two of its nine tests install that same demo extension.
+            "test/common/test_http_transport_manager.cpp",
+            # Compiled by :unittest_static_demo_extension.
+            "test/api/capi/v2/static_extension/**",
+            # Need extensions built as loadable modules, which this build does not have.
+            "test/extension/*.cpp",
+            # Not part of upstream's unittest binary either.
+            "test/api/serialized_plans/test_plan_serialization_bwc.cpp",
+            "test/ossfuzz/csv_json_fuzz_test.cpp",
+            "test/ossfuzz/parquet_fuzz_test.cpp",
+            "test/ossfuzz/parse_fuzz_test.cpp",
+            "test/sql/udf_function/test_aggregate_udf.cpp",
+            "test/static_link/**",
+        ],
+    ),
+    copts = TEST_COPTS,
+    local_defines = TEST_DEFINES,
+    deps = TEST_DEPS,
+    # The tests register themselves from static initialisers.
+    alwayslink = True,
+)
+
+cc_library(
+    name = "unittest_tests",
+    testonly = True,
+    srcs = [
+        "bazel/extension_test_paths.cpp",
+        # The C++ wrapper around the C API.
+        "tools/cpp/duckdb_cpp.cpp",
+    ] + select({
+        ":tpcds_enabled": TPCDS_TEST_SRCS,
+        "//conditions:default": [],
+    }) + select({
+        ":tpch_enabled": TPCH_TEST_SRCS,
+        "//conditions:default": [],
+    }) + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": NON_WINDOWS_TEST_SRCS,
+    }),
+    copts = TEST_COPTS,
+    local_defines = TEST_DEFINES,
+    deps = TEST_DEPS + [
+        ":unittest_radix_ht_sink",
+        ":unittest_static_demo_extension",
+        ":unittest_tests_globbed",
+    ],
+    # The tests register themselves from static initialisers.
+    alwayslink = True,
+)
+
+cc_library(
+    name = "unittest_runner",
+    testonly = True,
+    srcs = ["test/unittest.cpp"],
+    copts = TEST_COPTS,
+    # Its main() is called by the entry point in bazel/unittest_main.cpp.
+    local_defines = TEST_DEFINES + ["main=duckdb_unittest_main"],
+    deps = TEST_DEPS,
+)
+
+cc_test(
+    name = "unittest",
+    size = "enormous",
+    srcs = ["bazel/unittest_main.cpp"],
+    data = glob(
+        [
+            "data/**",
+            "test/**",
+            # Expected results that the tpch and tpcds tests compare against.
+            "extension/tpcds/dsdgen/answers/**",
+            "extension/tpch/dbgen/answers/**",
+        ],
+        exclude = [
+            "test/**/*.cpp",
+            "test/**/*.h",
+            "test/**/*.hpp",
+            "**/CMakeLists.txt",
+            # Tests of loadable extensions, which this build cannot make. The runner
+            # registers the scripts it finds, so leaving them out skips them. A filter
+            # argument would do it too, but any filter also switches on the slow tests
+            # that the runner leaves out by default.
+            "test/extension/**",
+            # Checks that a file under an allowed directory can be read. DuckDB resolves
+            # symbolic links for that check, and in a runfiles tree every file is a link
+            # to somewhere else.
+            "test/sql/settings/allowed_directories.test",
+            # These load the demo extension from test/extension/, a loadable module
+            # that this build does not produce.
+            "test/sql/extensions/aliasing.test",
+            "test/sql/extensions/load_use_extension_one_query.test",
+            "test/sql/extensions/quack_peeling.test",
+        ],
+    ),
+    # Where the source tree is within the runfiles: this repository's directory there.
+    local_defines = ['DUCKDB_RUNFILES_DIRECTORY=\\"%s\\"' % (repo_name() or "_main")],
+    shard_count = 16,
+    # One test opens a file from the test data for writing, and Bazel's macOS sandbox
+    # only lets a test write inside its own directories; the test data is linked from
+    # outside them.
+    tags = ["no-sandbox"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":duckdb",
+        ":unittest_runner",
+        ":unittest_tests",
+    ],
+)
