@@ -35,8 +35,11 @@ jobs:
           - ubuntu-24.04
           - ubuntu-24.04-arm
           - macos-15
+          - windows-2025
     defaults:
       run:
+        # bash on every platform, Windows included, so the steps below are portable.
+        shell: bash
         working-directory: e2e/smoke
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,11 +65,11 @@ jobs:
         run: touch "$RUNNER_TEMP/build-start"
 
       - name: Test with every optional extension
-        run: bazel test //:smoke_test
+        run: bazel test //:smoke_test --keep_going
 
       - name: Test with no optional extensions, no jemalloc, static link
         run: >
-          bazel test //:smoke_test
+          bazel test //:smoke_test --keep_going
           --@duckdb//:autocomplete=false
           --@duckdb//:icu=false
           --@duckdb//:json=false

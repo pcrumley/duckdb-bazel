@@ -6,7 +6,10 @@ common --registry=https://bcr.bazel.build
 # edit to the overlay.
 common --lockfile_mode=off
 
-build --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+common --enable_platform_specific_config
+build:linux --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+build:macos --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+build:windows --cxxopt=/std:c++17 --host_cxxopt=/std:c++17
 test --test_output=errors
 
 # Keeps compiled objects across overlay edits and `bazel clean`: a clean DuckDB build is

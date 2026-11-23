@@ -71,10 +71,30 @@ DUCKDB_SOURCE_ID = "d8cdaa33fd"
 
 COMMON_DEFINES = ["DUCKDB_BUILD_LIBRARY"]
 
+# What upstream's CMake build passes to MSVC. Selected by operating system, so it assumes
+# the Windows toolchain takes MSVC-style flags (MSVC or clang-cl).
+MSVC_COPTS = [
+    "/bigobj",
+    "/utf-8",
+    "/D_CRT_SECURE_NO_WARNINGS",
+    "/D_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS=1",
+    "/wd4244",
+    "/wd4267",
+    "/wd4200",
+]
+
+WINDOWS_COPTS = select({
+    "@platforms//os:windows": MSVC_COPTS,
+    "//conditions:default": [],
+})
+
 # Upstream compiles most vendored code with warnings off. It also uses
 # -fvisibility=hidden for some of it, which is left out here: Bazel links each cc_library
 # as its own shared object in dynamic mode, and the core library needs those symbols.
-THIRD_PARTY_COPTS = ["-w"]
+THIRD_PARTY_COPTS = select({
+    "@platforms//os:windows": MSVC_COPTS + ["/W0"],
+    "//conditions:default": ["-w"],
+})
 
 # Include directories upstream puts on the command line of every translation unit.
 THIRD_PARTY_INCLUDES = [
@@ -107,6 +127,12 @@ cc_library(
         "src/include/**/*.h",
         "src/include/**/*.hpp",
     ]),
+    # On Windows the API macros default to dllimport. This build is always a static
+    # library, so consumers and DuckDB's own sources must all see this.
+    defines = select({
+        "@platforms//os:windows": ["DUCKDB_STATIC_BUILD"],
+        "//conditions:default": [],
+    }),
     includes = ["src/include"],
 )
 
@@ -198,6 +224,7 @@ cc_library(
 cc_library(
     name = "mbedtls",
     srcs = glob(["third_party/mbedtls/**/*.cpp"]),
+    copts = WINDOWS_COPTS,
     local_defines = COMMON_DEFINES,
     deps = [":third_party_headers"],
 )
@@ -214,7 +241,16 @@ cc_library(
     name = "re2",
     srcs = glob(["third_party/re2/**/*.cc"]),
     copts = THIRD_PARTY_COPTS,
-    local_defines = COMMON_DEFINES + ["RE2_ON_VALGRIND"],
+    local_defines = COMMON_DEFINES + ["RE2_ON_VALGRIND"] + select({
+        "@platforms//os:windows": [
+            "UNICODE",
+            "_UNICODE",
+            "STRICT",
+            "NOMINMAX",
+            "_SCL_SECURE_NO_WARNINGS",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [":third_party_headers"],
 )
 
@@ -232,6 +268,7 @@ cc_library(
         ["third_party/utf8proc/**/*.cpp"],
         exclude = ["third_party/utf8proc/utf8proc_data.cpp"],
     ),
+    copts = WINDOWS_COPTS,
     local_defines = COMMON_DEFINES,
     deps = [":third_party_headers"],
 )
@@ -339,6 +376,7 @@ cc_library(
     name = "core_functions_extension",
     srcs = glob(["extension/core_functions/**/*.cpp"]),
     hdrs = glob(["extension/core_functions/include/**/*.hpp"]),
+    copts = WINDOWS_COPTS,
     includes = ["extension/core_functions/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_CORE_FUNCTIONS=\\"%s\\"' % DUCKDB_VERSION,
@@ -353,6 +391,7 @@ cc_library(
     name = "autocomplete_extension",
     srcs = glob(["extension/autocomplete/**/*.cpp"]),
     hdrs = glob(["extension/autocomplete/include/**/*.hpp"]),
+    copts = WINDOWS_COPTS,
     includes = ["extension/autocomplete/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_AUTOCOMPLETE=\\"%s\\"' % DUCKDB_VERSION,
@@ -391,6 +430,7 @@ cc_library(
     name = "json_extension",
     srcs = glob(["extension/json/**/*.cpp"]),
     hdrs = glob(["extension/json/include/**/*.hpp"]),
+    copts = WINDOWS_COPTS,
     includes = ["extension/json/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_JSON=\\"%s\\"' % DUCKDB_VERSION,
@@ -405,6 +445,7 @@ cc_library(
     name = "parquet_extension",
     srcs = glob(["extension/parquet/**/*.cpp"]),
     hdrs = glob(["extension/parquet/include/**/*.hpp"]),
+    copts = WINDOWS_COPTS,
     includes = ["extension/parquet/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_PARQUET=\\"%s\\"' % DUCKDB_VERSION,
@@ -494,12 +535,13 @@ cc_library(
     name = "extension_loader",
     srcs = ["generated/generated_extension_loader.cpp"],
     hdrs = ["generated/generated_extension_headers.hpp"],
-    includes = ["generated"],
+    copts = WINDOWS_COPTS,
     # Private, to keep the extensions' include paths and defines to this target.
     implementation_deps = [":core_functions_extension"] + [
         ":%s_if_enabled" % ext
         for ext in OPTIONAL_EXTENSIONS
     ],
+    includes = ["generated"],
     local_defines = COMMON_DEFINES + [
         "GENERATED_EXTENSION_HEADERS=1",
         "DUCKDB_EXTENSION_CORE_FUNCTIONS_LINKED=1",
@@ -525,7 +567,7 @@ cc_library(
     srcs = ALLOCATOR_SRCS,
     # allocator_jemalloc.cpp uses StringUtil without including its header. Upstream never
     # notices because its unity build compiles the file together with allocator.cpp.
-    copts = select({
+    copts = WINDOWS_COPTS + select({
         ":jemalloc_enabled": [
             "-include",
             "duckdb/common/string_util.hpp",
@@ -554,6 +596,7 @@ cc_library(
         ["src/**/*.cpp"],
         exclude = ALLOCATOR_SRCS,
     ),
+    copts = WINDOWS_COPTS,
     implementation_deps = [
         ":allocator",
         ":fastpforlib",
@@ -572,7 +615,11 @@ cc_library(
         ":zstd",
     ],
     linkopts = select({
-        "@platforms//os:windows": [],
+        "@platforms//os:windows": [
+            "-DEFAULTLIB:ws2_32.lib",
+            "-DEFAULTLIB:rstrtmgr.lib",
+            "-DEFAULTLIB:bcrypt.lib",
+        ],
         "//conditions:default": [
             "-lpthread",
             "-ldl",
@@ -583,13 +630,13 @@ cc_library(
         'DUCKDB_VERSION=\\"%s\\"' % DUCKDB_VERSION,
         'DUCKDB_SOURCE_ID=\\"%s\\"' % DUCKDB_SOURCE_ID,
     ],
+    deps = [":headers"],
     # The extensions and several vendored libraries call back into the core library
     # (upstream links them all into one archive). Always linking the core keeps a static
     # link correct with linkers that resolve archives in command-line order. Nearly all of
     # the core is reachable from opening a database anyway: this adds under 1% to a
     # statically linked binary.
     alwayslink = True,
-    deps = [":headers"],
 )
 
 # The public target: the core library plus the extensions selected by the flags.
