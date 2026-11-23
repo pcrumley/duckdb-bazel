@@ -1,0 +1,4 @@
+# Overlay files are hashed in source.json, so they must be byte-identical on every
+# platform. Without this, Git on Windows checks text files out with CRLF line endings
+# and the hashes no longer match.
+* text=auto eol=lf

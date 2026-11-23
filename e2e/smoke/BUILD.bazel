@@ -24,5 +24,12 @@ cc_test(
         "@duckdb//:tpch_enabled": ["tpch"],
         "//conditions:default": [],
     }),
+    # DuckDB takes UTF-8 strings, and MSVC encodes string literals in the system code
+    # page unless told otherwise. Upstream's CMake build passes this for everything it
+    # compiles; here it is on the one target that has non-ASCII literals.
+    copts = select({
+        "@platforms//os:windows": ["/utf-8"],
+        "//conditions:default": [],
+    }),
     deps = ["@duckdb"],
 )

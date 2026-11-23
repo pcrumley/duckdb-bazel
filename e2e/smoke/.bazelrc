@@ -1,12 +1,21 @@
-# Resolve duckdb from this repository, everything else from the BCR.
-common --registry=file://%workspace%/../..
+# Applies the :linux, :macos or :windows lines below. It comes first because the local
+# registry, set per platform, must precede the BCR.
+common --enable_platform_specific_config
+
+# Resolve duckdb from this repository, everything else from the BCR. %workspace% starts
+# with a drive letter on Windows, which needs a third slash to be a valid file URL.
+common:linux --registry=file://%workspace%/../..
+common:macos --registry=file://%workspace%/../..
+common:windows --registry=file:///%workspace%/../..
 common --registry=https://bcr.bazel.build
 
 # The lockfile would record the local registry's overlay hashes, which change on every
 # edit to the overlay.
 common --lockfile_mode=off
 
-build --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+build:linux --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+build:macos --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+build:windows --cxxopt=/std:c++17 --host_cxxopt=/std:c++17
 test --test_output=errors
 
 # Keeps compiled objects across overlay edits and `bazel clean`: a clean DuckDB build is
