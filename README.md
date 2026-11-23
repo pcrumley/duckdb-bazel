@@ -71,6 +71,13 @@ build --@duckdb//:jemalloc=false
 
 On other operating systems the flag has no effect and the system allocator is used.
 
+### Optimisation
+
+Build with `-c opt` for anything but development: that is the equivalent of upstream's
+release build, and several times faster at run time than Bazel's default mode. As
+upstream does, the build then compiles DuckDB with `-O3` on GCC and Clang, in place of
+the `-O2` Bazel's toolchains use. Your own targets are not affected.
+
 ### Tests
 
 DuckDB's own test suite is a target too: its C++ API tests and SQL logic tests, about
