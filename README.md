@@ -73,7 +73,8 @@ On other operating systems the flag has no effect and the system allocator is us
 
 ### Build time
 
-DuckDB is about 1,750 source files, and a first build takes over ten minutes on 16 cores.
+A first build of DuckDB with every extension takes about five minutes on 16 cores. Like
+upstream, it compiles most source directories as one unit each.
 Bazel caches the result, but CI and fresh checkouts pay it again unless you use
 `--disk_cache` or a remote cache.
 
@@ -90,6 +91,7 @@ modules/duckdb/
     overlay/                 files added on top of the upstream source
       MODULE.bazel           copy of ../MODULE.bazel
       BUILD.bazel            the build itself
+      unity.bzl              macro that compiles a source directory as one unit
       generated/             stand-ins for files upstream's CMake generates
 e2e/smoke/                   consumer workspace that resolves duckdb from this checkout
 tools/update_integrity.py    syncs overlay/MODULE.bazel and the hashes in source.json
