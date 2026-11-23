@@ -81,6 +81,19 @@ bazel run -c opt @duckdb//tools/shell:duckdb
 
 Nothing builds it unless you ask for it.
 
+### Shared library
+
+By default DuckDB is linked statically into your binaries. `@duckdb//:libduckdb` builds
+it as one shared library instead, `libduckdb.so` or `libduckdb.dylib`, holding the core
+and the extensions your flags select. To link a target against it, keep the dependency
+on `@duckdb` and add:
+
+```starlark
+dynamic_deps = ["@duckdb//:libduckdb"],
+```
+
+It is not available on Windows.
+
 ### Optimisation
 
 Build with `-c opt` for anything but development: that is the equivalent of upstream's

@@ -1,36 +1,41 @@
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
-# The arguments name the optional extensions whose flags are on. The test fails unless
-# exactly those are loaded.
+# The optional extensions whose flags are on.
+LINKED_EXTENSIONS = select({
+    "@duckdb//:autocomplete_enabled": ["autocomplete"],
+    "//conditions:default": [],
+}) + select({
+    "@duckdb//:icu_enabled": ["icu"],
+    "//conditions:default": [],
+}) + select({
+    "@duckdb//:json_enabled": ["json"],
+    "//conditions:default": [],
+}) + select({
+    "@duckdb//:parquet_enabled": ["parquet"],
+    "//conditions:default": [],
+}) + select({
+    "@duckdb//:tpcds_enabled": ["tpcds"],
+    "//conditions:default": [],
+}) + select({
+    "@duckdb//:tpch_enabled": ["tpch"],
+    "//conditions:default": [],
+})
+
+UTF8_COPTS = select({
+    "@platforms//os:windows": ["/utf-8"],
+    "//conditions:default": [],
+})
+
+# The arguments name the linked extensions. The test fails unless exactly those are
+# loaded.
 cc_test(
     name = "smoke_test",
     srcs = ["smoke_test.cc"],
-    args = select({
-        "@duckdb//:autocomplete_enabled": ["autocomplete"],
-        "//conditions:default": [],
-    }) + select({
-        "@duckdb//:icu_enabled": ["icu"],
-        "//conditions:default": [],
-    }) + select({
-        "@duckdb//:json_enabled": ["json"],
-        "//conditions:default": [],
-    }) + select({
-        "@duckdb//:parquet_enabled": ["parquet"],
-        "//conditions:default": [],
-    }) + select({
-        "@duckdb//:tpcds_enabled": ["tpcds"],
-        "//conditions:default": [],
-    }) + select({
-        "@duckdb//:tpch_enabled": ["tpch"],
-        "//conditions:default": [],
-    }),
+    args = LINKED_EXTENSIONS,
     # DuckDB takes UTF-8 strings, and MSVC encodes string literals in the system code
     # page unless told otherwise. Upstream's CMake build passes this for everything it
     # compiles; here it is on the one target that has non-ASCII literals.
-    copts = select({
-        "@platforms//os:windows": ["/utf-8"],
-        "//conditions:default": [],
-    }),
+    copts = UTF8_COPTS,
     deps = ["@duckdb"],
 )
 
@@ -41,4 +46,17 @@ cc_test(
     args = ["$(rlocationpath @duckdb//tools/shell:duckdb)"],
     data = ["@duckdb//tools/shell:duckdb"],
     deps = ["@rules_cc//cc/runfiles"],
+)
+
+# The same test linked against the shared library instead of statically.
+cc_test(
+    name = "smoke_shared_test",
+    srcs = ["smoke_test.cc"],
+    args = LINKED_EXTENSIONS,
+    dynamic_deps = ["@duckdb//:libduckdb"],
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = ["@duckdb"],
 )
