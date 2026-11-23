@@ -7,8 +7,8 @@ the aim is to submit this there once it is complete.
 
 **Status: work in progress.** The core library and the extensions listed below build and
 pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
-(MSVC). DuckDB's own test suite passes in CI on Linux x86_64, Linux arm64 and macOS
-arm64.
+(MSVC). DuckDB's own test suite passes in CI on Linux x86_64, Linux arm64, macOS arm64
+and Windows x86_64.
 
 ## Use
 
@@ -112,6 +112,10 @@ several times longer. Three kinds of test are left out: those that load extensio
 as separate modules, which this build does not produce; upstream's slow tests, which its
 runner skips by default too; and one that cannot pass when the test data is reached
 through symbolic links, as it is under Bazel.
+
+On Windows, add `--enable_runfiles`: the suite reads its test files from a runfiles
+directory, which Bazel only creates there when asked, and which needs permission to
+create symbolic links (administrator rights or Developer Mode).
 
 ### Build time
 

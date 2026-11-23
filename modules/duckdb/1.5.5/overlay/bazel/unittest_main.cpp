@@ -10,6 +10,12 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
+
 int duckdb_unittest_main(int argc, char *argv[]);
 
 namespace {
@@ -28,7 +34,19 @@ int main(int argc, char *argv[]) {
 	auto runfiles = Env("TEST_SRCDIR");
 	if (!runfiles.empty()) {
 		args.push_back("--test-dir");
-		args.push_back(runfiles + "/" + DUCKDB_RUNFILES_DIRECTORY);
+		auto test_dir = runfiles + "/" + DUCKDB_RUNFILES_DIRECTORY;
+		args.push_back(test_dir);
+
+		// The runner keeps its scratch files in a directory per process under this one,
+		// and creates this one if it is missing. Without a sandbox the shards share it,
+		// and two that start together both try to create it; the loser aborts. Create
+		// it here, where failing because it already exists does not matter.
+		auto scratch_dir = test_dir + "/duckdb_unittest_tempdir";
+#ifdef _WIN32
+		_mkdir(scratch_dir.c_str());
+#else
+		mkdir(scratch_dir.c_str(), 0777);
+#endif
 	}
 
 #ifdef _WIN32
