@@ -6,7 +6,8 @@ registry. DuckDB is not in the Bazel Central Registry yet
 the aim is to submit this there once it is complete.
 
 **Status: work in progress.** The core library and the extensions listed below build and
-pass a smoke test in CI on Linux x86_64, Linux arm64 and macOS arm64. Windows is untested.
+pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
+(MSVC).
 
 ## Use
 
@@ -27,6 +28,9 @@ Then depend on `@duckdb` from a `cc_library`, `cc_binary` or `cc_test` and
 `#include "duckdb.hpp"` (C++ API) or `"duckdb.h"` (C API).
 
 Requires Bazel 7.2.1 or newer.
+
+On Windows the build passes MSVC-style compiler flags, so it needs MSVC or clang-cl, and
+it defines `DUCKDB_STATIC_BUILD` for your targets: DuckDB is always linked statically.
 
 ### Extensions
 
