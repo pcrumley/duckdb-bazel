@@ -114,10 +114,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
     timeout-minutes: 180
     defaults:
       run:
+        shell: bash
         working-directory: e2e/smoke
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
