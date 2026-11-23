@@ -31,6 +31,15 @@ int main(int argc, char *argv[]) {
 		args.push_back(runfiles + "/" + DUCKDB_RUNFILES_DIRECTORY);
 	}
 
+#ifdef _WIN32
+	// Bazel gives a test a home directory (HOME) but not the variable Windows uses for
+	// it, and a few tests need DuckDB to find one.
+	auto tmpdir = Env("TEST_TMPDIR");
+	if (Env("USERPROFILE").empty() && !tmpdir.empty()) {
+		_putenv_s("USERPROFILE", tmpdir.c_str());
+	}
+#endif
+
 	// The runner's scratch directory is left at its default, a directory under the source
 	// tree. Pointing it at TEST_TMPDIR with --test-temp-dir would also turn off the
 	// clean-up between tests, and tests that reuse a database file name then collide.
