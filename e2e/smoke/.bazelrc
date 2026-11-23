@@ -18,6 +18,11 @@ build:macos --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
 build:windows --cxxopt=/std:c++17 --host_cxxopt=/std:c++17
 test --test_output=errors
 
+# One of DuckDB's tests opens a file from its test data for writing. Bazel's macOS
+# sandbox lets a test write only inside its own directories, and the test data is linked
+# from outside them.
+test:macos --strategy=TestRunner=local
+
 # Keeps compiled objects across overlay edits and `bazel clean`: a clean DuckDB build is
 # over ten minutes, and switching a flag back would otherwise recompile it.
 build --disk_cache=~/.cache/duckdb-bazel-disk-cache
