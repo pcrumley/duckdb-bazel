@@ -23,6 +23,11 @@ test --test_output=errors
 # from outside them.
 test:macos --strategy=TestRunner=local
 
+# DuckDB's test suite reads its test files from a runfiles directory, which Bazel only
+# creates on Windows when asked to. It needs permission to create symbolic links
+# (administrator rights or Developer Mode).
+build:windows --enable_runfiles
+
 # Keeps compiled objects across overlay edits and `bazel clean`: a clean DuckDB build is
 # over ten minutes, and switching a flag back would otherwise recompile it.
 build --disk_cache=~/.cache/duckdb-bazel-disk-cache
