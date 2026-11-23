@@ -7,7 +7,8 @@ the aim is to submit this there once it is complete.
 
 **Status: work in progress.** The core library and the extensions listed below build and
 pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
-(MSVC). DuckDB's own test suite passes in CI on Linux x86_64.
+(MSVC). DuckDB's own test suite passes in CI on Linux x86_64, Linux arm64 and macOS
+arm64.
 
 ## Use
 
