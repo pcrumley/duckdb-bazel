@@ -55,8 +55,11 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/duckdb-bazel-disk-cache
-          key: disk-cache-${{ matrix.os }}-${{ hashFiles('modules/**', 'e2e/**') }}
-          restore-keys: disk-cache-${{ matrix.os }}-
+          # The architecture is in the key because restore-keys match by prefix:
+          # "disk-cache-ubuntu-24.04-" also matches the ubuntu-24.04-arm caches, and the
+          # x86_64 job was restoring those and compiling everything again.
+          key: disk-cache-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('modules/**', 'e2e/**') }}
+          restore-keys: disk-cache-${{ matrix.os }}-${{ runner.arch }}-
 
       - name: Mark start of build
         run: touch "$RUNNER_TEMP/build-start"
@@ -97,5 +100,5 @@ jobs:
         with:
           path: ~/.cache/duckdb-bazel-disk-cache
           key: >-
-            disk-cache-${{ matrix.os }}-${{ hashFiles('modules/**', 'e2e/**') }}${{
+            disk-cache-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('modules/**', 'e2e/**') }}${{
             job.status != 'success' && format('-failed-{0}-{1}', github.run_id, github.run_attempt) || '' }}
