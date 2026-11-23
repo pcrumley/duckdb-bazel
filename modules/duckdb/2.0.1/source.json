@@ -3,7 +3,7 @@
     "integrity": "sha256-Herp1JF70GnEbCXG3b5Rou8GzHwS5qEBMq9PoPuDShQ=",
     "strip_prefix": "duckdb-2.0.1",
     "overlay": {
-        "BUILD.bazel": "sha256-Sz2o9R5JszwWW2oSfsZG8Hzd3Fq1Lcm+Ik2fEJSN/No=",
+        "BUILD.bazel": "sha256-LYPgZO3XL5D2KacmJcqeuVYJ0iF36bhi1+7OqJ6xD6I=",
         "MODULE.bazel": "sha256-QRlv+0f826U4XDiSJoejBgCtzcBIzkvFf5WFSH4R5i4=",
         "bazel/extension_test_paths.cpp": "sha256-7R4wZhID994NGRpvwkmBD80TsDzBpHtuD7wRICEe4Hs=",
         "bazel/static_extension_loader.c": "sha256-vdDQUzrQYQiHQ3CfidrrV8bm5tPj3dscJdu1y6B2FYo=",
