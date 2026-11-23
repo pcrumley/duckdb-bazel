@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     Check(con, "SELECT timezone('Europe/Amsterdam', TIMESTAMPTZ '2024-07-01 12:00:00+00')::VARCHAR",
           "2024-07-01 14:00:00");
     // Collation data: German sorts a-umlaut with a, ahead of z. DuckDB takes UTF-8, so
-    // with MSVC this literal relies on /utf-8, which .bazelrc sets as upstream's build does.
+    // with MSVC this literal relies on /utf-8, which BUILD.bazel sets as upstream's build does.
     Check(con, "SELECT string_agg(s, ',' ORDER BY s COLLATE de) FROM (VALUES ('z'), ('\u00e4'), ('a')) t(s)",
           "a,\u00e4,z");
   }

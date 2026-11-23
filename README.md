@@ -34,11 +34,7 @@ it defines `DUCKDB_STATIC_BUILD` for your targets: DuckDB is always linked stati
 
 DuckDB takes UTF-8 strings. MSVC encodes string literals in the system code page by
 default, so if your code passes non-ASCII literals to DuckDB, compile it with `/utf-8`,
-as upstream's own build does:
-
-```
-build:windows --cxxopt=/utf-8
-```
+as upstream's own build does, for example with `copts = ["/utf-8"]` on those targets.
 
 ### Extensions
 
