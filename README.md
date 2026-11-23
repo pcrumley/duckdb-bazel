@@ -7,7 +7,7 @@ the aim is to submit this there once it is complete.
 
 **Status: work in progress.** The core library and the extensions listed below build and
 pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
-(MSVC).
+(MSVC). DuckDB's own test suite passes in CI on Linux x86_64.
 
 ## Use
 
@@ -71,6 +71,22 @@ build --@duckdb//:jemalloc=false
 
 On other operating systems the flag has no effect and the system allocator is used.
 
+### Tests
+
+DuckDB's own test suite is a target too: its C++ API tests and SQL logic tests, about
+4,500 test cases, run as 16 shards.
+
+```
+bazel test -c opt @duckdb//:unittest
+```
+
+It tests the library as your flags configure it, and skips tests that need an extension
+that is not linked. Use `-c opt`: an unoptimised DuckDB runs its debug checks and takes
+several times longer. Three kinds of test are left out: those that load extensions built
+as separate modules, which this build does not produce; upstream's slow tests, which its
+runner skips by default too; and one that cannot pass when the test data is reached
+through symbolic links, as it is under Bazel.
+
 ### Build time
 
 A first build of DuckDB with every extension takes about five minutes on 16 cores. Like
@@ -92,6 +108,7 @@ modules/duckdb/
       MODULE.bazel           copy of ../MODULE.bazel
       BUILD.bazel            the build itself
       unity.bzl              macro that compiles a source directory as one unit
+      bazel/                 entry point that runs upstream's test runner under Bazel
       generated/             stand-ins for files upstream's CMake generates
 e2e/smoke/                   consumer workspace that resolves duckdb from this checkout
 tools/update_integrity.py    syncs overlay/MODULE.bazel and the hashes in source.json

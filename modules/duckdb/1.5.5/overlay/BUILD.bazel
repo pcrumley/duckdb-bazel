@@ -9,6 +9,7 @@ compilation mode (upstream's release build is the equivalent of `-c opt`).
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(":unity.bzl", "unity_cc_library")
 
 package(default_visibility = ["//visibility:private"])
@@ -669,4 +670,136 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [":headers"],
+)
+
+# Upstream's test suite: its Catch-based runner, the C++ API tests and the SQL logic
+# tests under test/. Run it with
+#   bazel test @duckdb//:unittest
+# It tests the library as configured, so tests that need an extension whose flag is off
+# are skipped.
+TEST_COPTS = WINDOWS_COPTS + select({
+    "@platforms//os:windows": [],
+    "//conditions:default": ["-w"],
+})
+
+TEST_DEFINES = [
+    "GENERATED_EXTENSION_HEADERS=1",
+    "DUCKDB_MAJOR_VERSION=%s" % DUCKDB_VERSION[1:].split(".")[0],
+    "DUCKDB_MINOR_VERSION=%s" % DUCKDB_VERSION[1:].split(".")[1],
+    "DUCKDB_PATCH_VERSION=%s" % DUCKDB_VERSION[1:].split(".")[2],
+    # Defaults for running the binary by hand from the source root. Under `bazel test`
+    # the entry point in bazel/unittest_main.cpp passes the real locations.
+    'DUCKDB_ROOT_DIRECTORY=\\".\\"',
+    'DUCKDB_BUILD_DIRECTORY=\\".\\"',
+]
+
+TEST_DEPS = [
+    ":core_functions_extension",
+    ":extension_loader",
+    ":headers",
+    ":test_headers",
+    ":third_party_headers",
+] + [
+    ":%s_if_enabled" % ext
+    for ext in OPTIONAL_EXTENSIONS
+]
+
+cc_library(
+    name = "test_headers",
+    testonly = True,
+    hdrs = glob([
+        "test/**/*.h",
+        "test/**/*.hpp",
+        "third_party/catch/*.hpp",
+    ]),
+    includes = [
+        "test/include",
+        "third_party/catch",
+    ],
+)
+
+# Sources that only build with the tpch extension.
+TPCH_TEST_SRCS = [
+    "test/api/serialized_plans/test_plan_serialization_bwc.cpp",
+    "test/api/test_tpch_with_relations.cpp",
+    "test/api/test_tpch_with_streaming.cpp",
+]
+
+# Sources upstream leaves out on Windows.
+NON_WINDOWS_TEST_SRCS = ["test/api/test_read_only.cpp"] + glob(["test/persistence/**/*.cpp"])
+
+cc_library(
+    name = "unittest_tests",
+    testonly = True,
+    srcs = glob(
+        ["test/**/*.cpp"],
+        exclude = TPCH_TEST_SRCS + NON_WINDOWS_TEST_SRCS + [
+            "test/unittest.cpp",
+            # Needs extensions built as loadable modules, which this build does not have.
+            "test/extension/**",
+            # Not part of upstream's unittest binary either.
+            "test/ossfuzz/parse_fuzz_test.cpp",
+            "test/sql/udf_function/test_aggregate_udf.cpp",
+        ],
+    ) + select({
+        ":tpch_enabled": TPCH_TEST_SRCS,
+        "//conditions:default": [],
+    }) + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": NON_WINDOWS_TEST_SRCS,
+    }),
+    copts = TEST_COPTS,
+    local_defines = TEST_DEFINES,
+    deps = TEST_DEPS,
+    # The tests register themselves from static initialisers.
+    alwayslink = True,
+)
+
+cc_library(
+    name = "unittest_runner",
+    testonly = True,
+    srcs = ["test/unittest.cpp"],
+    copts = TEST_COPTS,
+    # Its main() is called by the entry point in bazel/unittest_main.cpp.
+    local_defines = TEST_DEFINES + ["main=duckdb_unittest_main"],
+    deps = TEST_DEPS,
+)
+
+cc_test(
+    name = "unittest",
+    size = "enormous",
+    srcs = ["bazel/unittest_main.cpp"],
+    data = glob(
+        [
+            "data/**",
+            "test/**",
+            # Expected results that the tpch and tpcds tests compare against.
+            "extension/tpcds/dsdgen/answers/**",
+            "extension/tpch/dbgen/answers/**",
+        ],
+        exclude = [
+            "test/**/*.cpp",
+            "test/**/*.h",
+            "test/**/*.hpp",
+            "**/CMakeLists.txt",
+            # Tests of loadable extensions, which this build cannot make. The runner
+            # registers the scripts it finds, so leaving them out skips them. A filter
+            # argument would do it too, but any filter also switches on the slow tests
+            # that the runner leaves out by default.
+            "test/extension/**",
+            # Checks that a file under an allowed directory can be read. DuckDB resolves
+            # symbolic links for that check, and in a runfiles tree every file is a link
+            # to somewhere else.
+            "test/sql/settings/allowed_directories.test",
+        ],
+    ),
+    # Where the source tree is within the runfiles: this repository's directory there.
+    local_defines = ['DUCKDB_RUNFILES_DIRECTORY=\\"%s\\"' % (repo_name() or "_main")],
+    shard_count = 16,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":duckdb",
+        ":unittest_runner",
+        ":unittest_tests",
+    ],
 )
