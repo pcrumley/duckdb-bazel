@@ -78,9 +78,11 @@ int main(int argc, char **argv) {
     // Time zone data: Amsterdam is two hours ahead of UTC in summer.
     Check(con, "SELECT timezone('Europe/Amsterdam', TIMESTAMPTZ '2024-07-01 12:00:00+00')::VARCHAR",
           "2024-07-01 14:00:00");
-    // Collation data: German sorts a-umlaut with a, ahead of z.
-    Check(con, "SELECT string_agg(s, ',' ORDER BY s COLLATE de) FROM (VALUES ('z'), ('\u00e4'), ('a')) t(s)",
-          "a,\u00e4,z");
+    // Collation data: German sorts a-umlaut with a, ahead of z. The umlaut is spelled as
+    // UTF-8 bytes: a \u escape is encoded in the compiler's execution character set, which
+    // is not UTF-8 by default with MSVC.
+    Check(con, "SELECT string_agg(s, ',' ORDER BY s COLLATE de) FROM (VALUES ('z'), ('\xc3\xa4'), ('a')) t(s)",
+          "a,\xc3\xa4,z");
   }
 
   if (Expect(con, expected, "json")) {
