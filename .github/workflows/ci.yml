@@ -142,11 +142,14 @@ jobs:
       - name: Mark start of build
         run: touch "$RUNNER_TEMP/build-start"
 
+      # On Windows the suite is built with clang-cl, the compiler upstream builds and
+      # tests its Windows releases with. The smoke job covers MSVC.
       - name: Run DuckDB's test suite
-        # A few of DuckDB's tests depend on timing and fail now and then on a loaded
-        # runner; upstream's own harness retries failures too. A shard that passes on
-        # its second attempt is reported as flaky, not as passed.
-        run: bazel test -c opt @duckdb//:unittest --keep_going --flaky_test_attempts=2
+        env:
+          BAZEL_LLVM: C:\\Program Files\\LLVM
+        run: >
+          bazel test -c opt @duckdb//:unittest --keep_going
+          ${{ runner.os == 'Windows' && '--config=clang-cl' || '' }}
 
       - name: Trim disk cache
         run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
