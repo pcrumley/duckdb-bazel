@@ -22,7 +22,7 @@ common --registry=https://bcr.bazel.build
 In `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "duckdb", version = "1.5.5")
+bazel_dep(name = "duckdb", version = "1.5.6")
 ```
 
 Then depend on `@duckdb` from a `cc_library`, `cc_binary` or `cc_test` and
@@ -133,7 +133,7 @@ Bazel caches the result, but CI and fresh checkouts pay it again unless you use
 bazel_registry.json          marks this repository as a registry
 modules/duckdb/
   metadata.json
-  1.5.5/
+  1.5.6/
     source.json              upstream tarball, plus a hash for each overlay file
     MODULE.bazel
     presubmit.yml            BCR CI configuration
