@@ -3,8 +3,9 @@
 Mirrors upstream's CMake build: the core library in src/, the vendored libraries in
 third_party/ that it always links, and the in-tree extensions selected by flags.
 
-Optimisation level, NDEBUG and the C++ standard are left to the consumer's toolchain and
-compilation mode (upstream's release build is the equivalent of `-c opt`).
+NDEBUG and the C++ standard are left to the consumer's toolchain and compilation mode.
+Upstream's release build is the equivalent of `-c opt`, and as there DuckDB is then
+compiled with -O3 rather than the toolchain's usual -O2.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
@@ -85,7 +86,27 @@ MSVC_COPTS = [
     "/wd4200",
 ]
 
-WINDOWS_COPTS = select({
+# Upstream's release build uses -O3 with GCC and Clang, where Bazel's toolchains use -O2
+# for `-c opt`. These come after the toolchain's flags, so -O3 wins. MSVC is left alone:
+# both builds use /O2 there, its highest level.
+config_setting(
+    name = "opt",
+    values = {"compilation_mode": "opt"},
+)
+
+config_setting(
+    name = "opt_windows",
+    constraint_values = ["@platforms//os:windows"],
+    values = {"compilation_mode": "opt"},
+)
+
+OPT_COPTS = select({
+    ":opt_windows": [],
+    ":opt": ["-O3"],
+    "//conditions:default": [],
+})
+
+DUCKDB_COPTS = OPT_COPTS + select({
     "@platforms//os:windows": MSVC_COPTS,
     "//conditions:default": [],
 })
@@ -93,7 +114,7 @@ WINDOWS_COPTS = select({
 # Upstream compiles most vendored code with warnings off. It also uses
 # -fvisibility=hidden for some of it, which is left out here: Bazel links each cc_library
 # as its own shared object in dynamic mode, and the core library needs those symbols.
-THIRD_PARTY_COPTS = select({
+THIRD_PARTY_COPTS = OPT_COPTS + select({
     "@platforms//os:windows": MSVC_COPTS + ["/W0"],
     "//conditions:default": ["-w"],
 })
@@ -226,7 +247,7 @@ cc_library(
 cc_library(
     name = "mbedtls",
     srcs = glob(["third_party/mbedtls/**/*.cpp"]),
-    copts = WINDOWS_COPTS,
+    copts = DUCKDB_COPTS,
     local_defines = COMMON_DEFINES,
     deps = [":third_party_headers"],
 )
@@ -270,7 +291,7 @@ cc_library(
         ["third_party/utf8proc/**/*.cpp"],
         exclude = ["third_party/utf8proc/utf8proc_data.cpp"],
     ),
-    copts = WINDOWS_COPTS,
+    copts = DUCKDB_COPTS,
     local_defines = COMMON_DEFINES,
     deps = [":third_party_headers"],
 )
@@ -381,7 +402,7 @@ unity_cc_library(
     name = "core_functions_extension",
     srcs = glob(["extension/core_functions/**/*.cpp"]),
     hdrs = glob(["extension/core_functions/include/**/*.hpp"]),
-    copts = WINDOWS_COPTS,
+    copts = DUCKDB_COPTS,
     includes = ["extension/core_functions/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_CORE_FUNCTIONS=\\"%s\\"' % DUCKDB_VERSION,
@@ -397,7 +418,7 @@ unity_cc_library(
     name = "autocomplete_extension",
     srcs = glob(["extension/autocomplete/**/*.cpp"]),
     hdrs = glob(["extension/autocomplete/include/**/*.hpp"]),
-    copts = WINDOWS_COPTS,
+    copts = DUCKDB_COPTS,
     includes = ["extension/autocomplete/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_AUTOCOMPLETE=\\"%s\\"' % DUCKDB_VERSION,
@@ -441,7 +462,7 @@ unity_cc_library(
     name = "json_extension",
     srcs = glob(["extension/json/**/*.cpp"]),
     hdrs = glob(["extension/json/include/**/*.hpp"]),
-    copts = WINDOWS_COPTS,
+    copts = DUCKDB_COPTS,
     includes = ["extension/json/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_JSON=\\"%s\\"' % DUCKDB_VERSION,
@@ -457,7 +478,7 @@ unity_cc_library(
     name = "parquet_extension",
     srcs = glob(["extension/parquet/**/*.cpp"]),
     hdrs = glob(["extension/parquet/include/**/*.hpp"]),
-    copts = WINDOWS_COPTS,
+    copts = DUCKDB_COPTS,
     includes = ["extension/parquet/include"],
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_PARQUET=\\"%s\\"' % DUCKDB_VERSION,
@@ -548,7 +569,7 @@ cc_library(
     name = "extension_loader",
     srcs = ["generated/generated_extension_loader.cpp"],
     hdrs = ["generated/generated_extension_headers.hpp"],
-    copts = WINDOWS_COPTS,
+    copts = DUCKDB_COPTS,
     # Private, to keep the extensions' include paths and defines to this target.
     implementation_deps = [":core_functions_extension"] + [
         ":%s_if_enabled" % ext
@@ -580,7 +601,7 @@ cc_library(
     srcs = ALLOCATOR_SRCS,
     # allocator_jemalloc.cpp uses StringUtil without including its header. Upstream never
     # notices because its unity build compiles the file together with allocator.cpp.
-    copts = WINDOWS_COPTS + select({
+    copts = DUCKDB_COPTS + select({
         ":jemalloc_enabled": [
             "-include",
             "duckdb/common/string_util.hpp",
@@ -612,7 +633,7 @@ unity_cc_library(
         ["src/**/*.cpp"],
         exclude = ALLOCATOR_SRCS,
     ),
-    copts = WINDOWS_COPTS,
+    copts = DUCKDB_COPTS,
     implementation_deps = [
         ":allocator",
         ":fastpforlib",
@@ -677,7 +698,7 @@ cc_library(
 #   bazel test @duckdb//:unittest
 # It tests the library as configured, so tests that need an extension whose flag is off
 # are skipped.
-TEST_COPTS = WINDOWS_COPTS + select({
+TEST_COPTS = DUCKDB_COPTS + select({
     "@platforms//os:windows": [],
     "//conditions:default": ["-w"],
 })
