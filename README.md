@@ -32,6 +32,14 @@ Requires Bazel 7.2.1 or newer.
 On Windows the build passes MSVC-style compiler flags, so it needs MSVC or clang-cl, and
 it defines `DUCKDB_STATIC_BUILD` for your targets: DuckDB is always linked statically.
 
+DuckDB takes UTF-8 strings. MSVC encodes string literals in the system code page by
+default, so if your code passes non-ASCII literals to DuckDB, compile it with `/utf-8`,
+as upstream's own build does:
+
+```
+build:windows --cxxopt=/utf-8
+```
+
 ### Extensions
 
 DuckDB's in-tree extensions are linked into the library according to flags. The defaults

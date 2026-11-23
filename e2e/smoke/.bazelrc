@@ -16,6 +16,9 @@ common --lockfile_mode=off
 build:linux --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
 build:macos --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
 build:windows --cxxopt=/std:c++17 --host_cxxopt=/std:c++17
+# DuckDB takes UTF-8 strings, and MSVC encodes string literals in the system code page
+# unless told otherwise. Upstream's CMake build passes this for everything it compiles.
+build:windows --cxxopt=/utf-8 --host_cxxopt=/utf-8
 test --test_output=errors
 
 # Keeps compiled objects across overlay edits and `bazel clean`: a clean DuckDB build is
