@@ -9,6 +9,7 @@ compilation mode (upstream's release build is the equivalent of `-c opt`).
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load(":unity.bzl", "unity_cc_library")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -370,9 +371,12 @@ cc_library(
     ],
 )
 
-# Extensions. To add one: add its library below as <name>_extension, add it to
+# Extensions. Like upstream, each compiles its subdirectories as unity builds and its
+# top-level files one by one; tpch, tpcds and icu are not unity builds at all.
+#
+# To add one: add its library below as <name>_extension, add it to
 # OPTIONAL_EXTENSIONS, and add it to the two files in generated/.
-cc_library(
+unity_cc_library(
     name = "core_functions_extension",
     srcs = glob(["extension/core_functions/**/*.cpp"]),
     hdrs = glob(["extension/core_functions/include/**/*.hpp"]),
@@ -381,13 +385,14 @@ cc_library(
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_CORE_FUNCTIONS=\\"%s\\"' % DUCKDB_VERSION,
     ],
+    non_unity_dirs = ["extension/core_functions"],
     deps = [
         ":third_party_headers",
         ":vendored_libs",
     ],
 )
 
-cc_library(
+unity_cc_library(
     name = "autocomplete_extension",
     srcs = glob(["extension/autocomplete/**/*.cpp"]),
     hdrs = glob(["extension/autocomplete/include/**/*.hpp"]),
@@ -396,6 +401,7 @@ cc_library(
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_AUTOCOMPLETE=\\"%s\\"' % DUCKDB_VERSION,
     ],
+    non_unity_dirs = ["extension/autocomplete"],
     deps = [
         ":third_party_headers",
         ":vendored_libs",
@@ -404,6 +410,10 @@ cc_library(
 
 # Includes upstream's vendored copy of ICU, about 380 files and 12 MB of locale and time
 # zone data. Upstream compiles all of it with warnings off.
+#
+# Not a unity build. Vendored ICU only compiles as one in the file order of upstream's
+# CMake lists (putil.cpp, for one, defines macros that break files included after it),
+# and a glob does not have that order.
 cc_library(
     name = "icu_extension",
     srcs = glob(["extension/icu/**/*.cpp"]),
@@ -426,7 +436,7 @@ cc_library(
     ],
 )
 
-cc_library(
+unity_cc_library(
     name = "json_extension",
     srcs = glob(["extension/json/**/*.cpp"]),
     hdrs = glob(["extension/json/include/**/*.hpp"]),
@@ -435,13 +445,14 @@ cc_library(
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_JSON=\\"%s\\"' % DUCKDB_VERSION,
     ],
+    non_unity_dirs = ["extension/json"],
     deps = [
         ":third_party_headers",
         ":vendored_libs",
     ],
 )
 
-cc_library(
+unity_cc_library(
     name = "parquet_extension",
     srcs = glob(["extension/parquet/**/*.cpp"]),
     hdrs = glob(["extension/parquet/include/**/*.hpp"]),
@@ -450,6 +461,7 @@ cc_library(
     local_defines = COMMON_DEFINES + [
         'EXT_VERSION_PARQUET=\\"%s\\"' % DUCKDB_VERSION,
     ],
+    non_unity_dirs = ["extension/parquet"],
     deps = [
         ":brotli",
         ":lz4",
@@ -590,7 +602,10 @@ cc_library(
 # privately: every header of a dependency is an input to each of these ~1,380 compile
 # actions, so adding an extension to generated_extension_headers.hpp would change all
 # their cache keys and a cold build would recompile the lot.
-cc_library(
+#
+# Compiled one directory at a time, as upstream does, apart from the three directories
+# upstream compiles file by file.
+unity_cc_library(
     name = "core",
     srcs = glob(
         ["src/**/*.cpp"],
@@ -629,6 +644,11 @@ cc_library(
     local_defines = CORE_DEFINES + [
         'DUCKDB_VERSION=\\"%s\\"' % DUCKDB_VERSION,
         'DUCKDB_SOURCE_ID=\\"%s\\"' % DUCKDB_SOURCE_ID,
+    ],
+    non_unity_dirs = [
+        "src/common/vector_operations",
+        "src/main/extension",
+        "src/verification",
     ],
     deps = [":headers"],
     # The extensions and several vendored libraries call back into the core library
