@@ -105,3 +105,50 @@ jobs:
           key: >-
             disk-cache-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('modules/**', 'e2e/**') }}${{
             job.status != 'success' && format('-failed-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+
+  # Upstream's own test suite, against an optimised build with every extension. Linux
+  # x86_64 only: it needs its own optimised build of DuckDB, and the suite takes several
+  # times longer than everything above.
+  unittest:
+    name: DuckDB test suite (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: e2e/smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: bazel-contrib/setup-bazel@f34d6a05eae3c24acab7fa54587492daeaeffdab # 0.19.2
+        with:
+          module-root: e2e/smoke
+          bazelisk-cache: true
+          repository-cache: true
+          # The smoke job for this platform saves the same two caches.
+          cache-save: false
+
+      # A cache of its own: the optimised objects are different from the smoke job's.
+      - name: Restore disk cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/duckdb-bazel-disk-cache
+          key: disk-cache-unittest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('modules/**', 'e2e/**') }}
+          restore-keys: disk-cache-unittest-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Mark start of build
+        run: touch "$RUNNER_TEMP/build-start"
+
+      - name: Run DuckDB's test suite
+        run: bazel test -c opt @duckdb//:unittest --keep_going
+
+      - name: Trim disk cache
+        run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
+
+      - name: Save disk cache
+        if: ${{ !cancelled() && !github.event.pull_request.head.repo.fork }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/duckdb-bazel-disk-cache
+          key: >-
+            disk-cache-unittest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('modules/**', 'e2e/**') }}${{
+            job.status != 'success' && format('-failed-{0}-{1}', github.run_id, github.run_attempt) || '' }}
