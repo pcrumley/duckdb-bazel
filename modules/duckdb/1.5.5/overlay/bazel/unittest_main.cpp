@@ -7,8 +7,17 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <random>
 #include <string>
+#include <system_error>
 #include <vector>
+
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
 
 int duckdb_unittest_main(int argc, char *argv[]);
 
@@ -17,6 +26,61 @@ namespace {
 std::string Env(const char *name) {
 	const char *value = std::getenv(name);
 	return value ? value : "";
+}
+
+// Bazel gives a test its data files as symbolic links to the real files. A few tests
+// cannot work through links: DuckDB's ** glob does not follow them, its allowed_directories
+// setting resolves them to a path outside the allowed directory, and the macOS sandbox
+// refuses to open their targets for writing. These are the files and directories those
+// tests use, relative to the source tree. They are small, and are replaced by real copies
+// before the runner starts.
+const char *const REAL_FILES[] = {
+    "data/csv/glob",
+    "data/json",
+    "data/parquet-testing/blob.parquet",
+    "data/parquet-testing/glob",
+    "data/parquet-testing/h2oai/h2oai_group_small.parquet",
+};
+
+// Replaces `path` by a copy of the file it links to, if it is a link to a regular file.
+// Errors are ignored: the tests that needed the copy will report them.
+void ReplaceLinkByCopy(const std::filesystem::path &path, const std::string &suffix) {
+	namespace fs = std::filesystem;
+	std::error_code error;
+	if (!fs::is_symlink(path, error) || !fs::is_regular_file(path, error)) {
+		return;
+	}
+	// Copied next to the link and renamed over it, so that another shard using the same
+	// directory never sees a partial file.
+	auto copy = path;
+	copy += suffix;
+	if (fs::copy_file(path, copy, error)) {
+		fs::rename(copy, path, error);
+	}
+	if (error) {
+		fs::remove(copy, error);
+	}
+}
+
+void ReplaceLinksByCopies(const std::filesystem::path &root) {
+	namespace fs = std::filesystem;
+	auto suffix = ".copy" + std::to_string(std::random_device()());
+	for (auto relative : REAL_FILES) {
+		auto path = root / relative;
+		std::error_code error;
+		if (!fs::is_directory(path, error)) {
+			ReplaceLinkByCopy(path, suffix);
+			continue;
+		}
+		// Collected first: replacing entries while iterating over them is not safe.
+		std::vector<fs::path> entries;
+		for (fs::recursive_directory_iterator it(path, error), end; !error && it != end; it.increment(error)) {
+			entries.push_back(it->path());
+		}
+		for (auto &entry : entries) {
+			ReplaceLinkByCopy(entry, suffix);
+		}
+	}
 }
 
 } // namespace
@@ -28,8 +92,31 @@ int main(int argc, char *argv[]) {
 	auto runfiles = Env("TEST_SRCDIR");
 	if (!runfiles.empty()) {
 		args.push_back("--test-dir");
-		args.push_back(runfiles + "/" + DUCKDB_RUNFILES_DIRECTORY);
+		auto test_dir = runfiles + "/" + DUCKDB_RUNFILES_DIRECTORY;
+		args.push_back(test_dir);
+
+		// The runner keeps its scratch files in a directory per process under this one,
+		// and creates this one if it is missing. Without a sandbox the shards share it,
+		// and two that start together both try to create it; the loser aborts. Create
+		// it here, where failing because it already exists does not matter.
+		ReplaceLinksByCopies(test_dir);
+
+		auto scratch_dir = test_dir + "/duckdb_unittest_tempdir";
+#ifdef _WIN32
+		_mkdir(scratch_dir.c_str());
+#else
+		mkdir(scratch_dir.c_str(), 0777);
+#endif
 	}
+
+#ifdef _WIN32
+	// Bazel gives a test a home directory (HOME) but not the variable Windows uses for
+	// it, and a few tests need DuckDB to find one.
+	auto tmpdir = Env("TEST_TMPDIR");
+	if (Env("USERPROFILE").empty() && !tmpdir.empty()) {
+		_putenv_s("USERPROFILE", tmpdir.c_str());
+	}
+#endif
 
 	// The runner's scratch directory is left at its default, a directory under the source
 	// tree. Pointing it at TEST_TMPDIR with --test-temp-dir would also turn off the

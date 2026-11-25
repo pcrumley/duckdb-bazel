@@ -7,8 +7,8 @@ the aim is to submit this there once it is complete.
 
 **Status: work in progress.** The core library and the extensions listed below build and
 pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
-(MSVC). DuckDB's own test suite passes in CI on Linux x86_64, Linux arm64 and macOS
-arm64.
+(MSVC). DuckDB's own test suite passes in CI on Linux x86_64, Linux arm64, macOS arm64
+and Windows x86_64.
 
 ## Use
 
@@ -108,10 +108,17 @@ bazel test -c opt @duckdb//:unittest
 
 It tests the library as your flags configure it, and skips tests that need an extension
 that is not linked. Use `-c opt`: an unoptimised DuckDB runs its debug checks and takes
-several times longer. Three kinds of test are left out: those that load extensions built
-as separate modules, which this build does not produce; upstream's slow tests, which its
-runner skips by default too; and one that cannot pass when the test data is reached
-through symbolic links, as it is under Bazel.
+several times longer. Two kinds of test are left out: those that load extensions built
+as separate modules, which this build does not produce, and upstream's slow tests, which
+its runner skips by default too.
+
+Bazel gives a test its data as symbolic links, which a few of DuckDB's tests cannot work
+through. The test's entry point replaces the files those tests use, about 5 MB, with real
+copies before it starts.
+
+On Windows, add `--enable_runfiles`: the suite reads its test files from a runfiles
+directory, which Bazel only creates there when asked, and which needs permission to
+create symbolic links (administrator rights or Developer Mode).
 
 ### Build time
 
