@@ -999,10 +999,6 @@ cc_test(
             # argument would do it too, but any filter also switches on the slow tests
             # that the runner leaves out by default.
             "test/extension/**",
-            # Checks that a file under an allowed directory can be read. DuckDB resolves
-            # symbolic links for that check, and in a runfiles tree every file is a link
-            # to somewhere else.
-            "test/sql/settings/allowed_directories.test",
             # These load the demo extension from test/extension/, a loadable module
             # that this build does not produce.
             "test/sql/extensions/aliasing.test",
