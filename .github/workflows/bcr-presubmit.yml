@@ -1,0 +1,58 @@
+name: BCR presubmit
+
+# What the Bazel Central Registry's presubmit does with a module version, on the
+# platforms and Bazel versions its presubmit.yml names: build the public targets and run
+# the test module, with no flags and no cache. Every job is a clean, unoptimised build of
+# DuckDB, about an hour each, so this runs when asked to, and on a pull request that
+# changes this file.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Module version to test
+        required: true
+        default: "1.5.6"
+  pull_request:
+    paths:
+      - .github/workflows/bcr-presubmit.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  presubmit:
+    name: ${{ inputs.version || '1.5.6' }}, Bazel ${{ matrix.bazel }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+        bazel: [7.x, 8.x, 9.x]
+    defaults:
+      run:
+        shell: bash
+    env:
+      USE_BAZEL_VERSION: ${{ matrix.bazel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: bazel-contrib/setup-bazel@f34d6a05eae3c24acab7fa54587492daeaeffdab # 0.19.2
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          cache-save: false
+
+      - name: Lay out the source tree
+        run: python3 tools/presubmit_tree.py "${{ inputs.version || '1.5.6' }}" "$RUNNER_TEMP/d"
+
+      - name: Run the test module
+        working-directory: ${{ runner.temp }}/d/bazel/test_module
+        run: |
+          bazel --version
+          bazel test //... --test_output=errors
+          bazel build @duckdb//:duckdb @duckdb//:libduckdb @duckdb//tools/shell:duckdb
