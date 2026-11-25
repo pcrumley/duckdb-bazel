@@ -202,7 +202,7 @@ bazel test //...
 ```
 
 The "BCR presubmit" workflow does this on Linux, macOS and Windows with Bazel 7, 8 and 9.
-Start it by hand from the Actions tab; each job is a clean build of about an hour.
+Start it by hand from the Actions tab; each job is a clean build of 5 to 15 minutes.
 
 The workspace's `.bazelrc` sets a disk cache in `~/.cache/duckdb-bazel-disk-cache`, so
 only the first build pays the full compile.

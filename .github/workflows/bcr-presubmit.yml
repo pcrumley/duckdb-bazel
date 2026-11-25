@@ -3,7 +3,7 @@ name: BCR presubmit
 # What the Bazel Central Registry's presubmit does with a module version, on the
 # platforms and Bazel versions its presubmit.yml names: build the public targets and run
 # the test module, with no flags and no cache. Every job is a clean, unoptimised build of
-# DuckDB, about an hour each, so this runs when asked to, and on a pull request that
+# DuckDB, 5 to 15 minutes each, so this runs when asked to, and on a pull request that
 # changes this file.
 on:
   workflow_dispatch:
