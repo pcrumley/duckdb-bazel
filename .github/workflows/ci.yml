@@ -144,9 +144,18 @@ jobs:
 
       # On Windows the suite is built with clang-cl, the compiler upstream builds and
       # tests its Windows releases with. The smoke job covers MSVC.
+      #
+      # The clang-cl that ships with Visual Studio, not the separate LLVM on the runner:
+      # MSVC's standard library refuses a Clang older than the one it was released with.
+      - name: Find Visual Studio's clang-cl
+        if: runner.os == 'Windows'
+        run: |
+          vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath)
+          llvm="$vs\\VC\\Tools\\Llvm\\x64"
+          "$(cygpath -u "$llvm")/bin/clang-cl.exe" --version
+          echo "BAZEL_LLVM=$llvm" >> "$GITHUB_ENV"
+
       - name: Run DuckDB's test suite
-        env:
-          BAZEL_LLVM: C:\\Program Files\\LLVM
         run: >
           bazel test -c opt @duckdb//:unittest --keep_going
           ${{ runner.os == 'Windows' && '--config=clang-cl' || '' }}
