@@ -8,7 +8,7 @@ the aim is to submit this there once it is complete.
 **Status: work in progress.** The core library and the extensions listed below build and
 pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
 (MSVC). DuckDB's own test suite passes in CI on Linux x86_64, Linux arm64, macOS arm64
-and Windows x86_64.
+and Windows x86_64 (with clang-cl).
 
 ## Use
 
@@ -36,6 +36,15 @@ On Windows the build passes MSVC-style compiler flags, so it needs MSVC or clang
 DuckDB takes UTF-8 strings. MSVC encodes string literals in the system code page by
 default, so if your code passes non-ASCII literals to DuckDB, compile it with `/utf-8`,
 as upstream's own build does, for example with `copts = ["/utf-8"]` on those targets.
+
+### Changes in DuckDB 2.0
+
+- Linked extensions, `core_functions` included, are registered by a static initialiser in
+  the library. A database opened before that runs, from a static initialiser of your
+  own, has no extensions. Open databases from `main` onwards.
+- Outside `-c opt`, DuckDB is built with its internal assertions on
+  (`DUCKDB_FORCE_ASSERT`) and is much slower. 2.0 does not compile in Bazel's default
+  mode without them. The build chooses by compilation mode: `-c opt` gets `NDEBUG`.
 
 ### Extensions
 
@@ -119,6 +128,11 @@ copies before it starts.
 On Windows, add `--enable_runfiles`: the suite reads its test files from a runfiles
 directory, which Bazel only creates there when asked, and which needs permission to
 create symbolic links (administrator rights or Developer Mode).
+
+Upstream builds and tests DuckDB 2.0 on Windows with clang-cl, not with MSVC's own
+compiler, and so does CI here for the test suite. With MSVC the library builds and passes
+the smoke test, but a few of DuckDB's tests fail. `e2e/smoke/.bazelrc` shows how to
+select clang-cl (`--config=clang-cl`).
 
 ### Build time
 

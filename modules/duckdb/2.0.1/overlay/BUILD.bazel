@@ -88,12 +88,14 @@ COMMON_DEFINES = [
     "@platforms//os:linux": ["DUCKDB_HAVE_FDATASYNC=1"],
     "//conditions:default": [],
 }) + select({
-    # DuckDB compiles with NDEBUG (a release build), with DEBUG, or with this, which turns
-    # its assertions on without the rest of a debug build. With none of the three, as in
-    # Bazel's default compilation mode, it does not compile: its assertions are on but the
-    # code they call is left out. Selected here because the opt/non-opt condition is
-    # defined below.
-    ":opt": [],
+    # DuckDB compiles with NDEBUG (a release build), with DEBUG, or with
+    # DUCKDB_FORCE_ASSERT, which turns its assertions on without the rest of a debug
+    # build. With none of the three, as in Bazel's default compilation mode, it does not
+    # compile: its assertions are on but the code they call is left out. So the build
+    # picks one by compilation mode rather than rely on what the toolchain defines:
+    # NDEBUG for -c opt, which toolchains usually define there anyway, and
+    # DUCKDB_FORCE_ASSERT otherwise.
+    ":opt": ["NDEBUG"],
     "//conditions:default": ["DUCKDB_FORCE_ASSERT"],
 })
 
@@ -882,6 +884,8 @@ cc_library(
         "DUCKDB_EXTENSION_NAME=cpp_api_static_demo",
     ],
     deps = TEST_DEPS,
+    # The test that refers to it is in a library that comes later in a static link.
+    alwayslink = True,
 )
 
 # test_radix_ht_sink.cpp uses BufferManager without including its header. Upstream never
