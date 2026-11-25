@@ -10,6 +10,7 @@ compiled with -O3 rather than the toolchain's usual -O2.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(":unity.bzl", "unity_cc_library")
 
@@ -691,6 +692,31 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [":headers"],
+)
+
+# DuckDB as one shared library, libduckdb.so or libduckdb.dylib, holding the core and the
+# extensions selected by the flags. To link a Bazel target against it rather than
+# statically, depend on :duckdb as usual and add
+#   dynamic_deps = ["@duckdb//:libduckdb"]
+#
+# Not available on Windows: this build compiles DuckDB there with DUCKDB_STATIC_BUILD,
+# which leaves its API unexported.
+cc_shared_library(
+    name = "libduckdb",
+    shared_lib_name = select({
+        "@platforms//os:macos": "libduckdb.dylib",
+        "//conditions:default": "libduckdb.so",
+    }),
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    user_link_flags = select({
+        "@platforms//os:macos": ["-Wl,-install_name,@rpath/libduckdb.dylib"],
+        "//conditions:default": ["-Wl,-soname,libduckdb.so"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [":duckdb"],
 )
 
 # The command-line shell. The binary itself is //tools/shell:duckdb, a separate package
