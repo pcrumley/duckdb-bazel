@@ -7,7 +7,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <random>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #ifdef _WIN32
@@ -23,6 +26,61 @@ namespace {
 std::string Env(const char *name) {
 	const char *value = std::getenv(name);
 	return value ? value : "";
+}
+
+// Bazel gives a test its data files as symbolic links to the real files. A few tests
+// cannot work through links: DuckDB's ** glob does not follow them, its allowed_directories
+// setting resolves them to a path outside the allowed directory, and the macOS sandbox
+// refuses to open their targets for writing. These are the files and directories those
+// tests use, relative to the source tree. They are small, and are replaced by real copies
+// before the runner starts.
+const char *const REAL_FILES[] = {
+    "data/csv/glob",
+    "data/json",
+    "data/parquet-testing/blob.parquet",
+    "data/parquet-testing/glob",
+    "data/parquet-testing/h2oai/h2oai_group_small.parquet",
+};
+
+// Replaces `path` by a copy of the file it links to, if it is a link to a regular file.
+// Errors are ignored: the tests that needed the copy will report them.
+void ReplaceLinkByCopy(const std::filesystem::path &path, const std::string &suffix) {
+	namespace fs = std::filesystem;
+	std::error_code error;
+	if (!fs::is_symlink(path, error) || !fs::is_regular_file(path, error)) {
+		return;
+	}
+	// Copied next to the link and renamed over it, so that another shard using the same
+	// directory never sees a partial file.
+	auto copy = path;
+	copy += suffix;
+	if (fs::copy_file(path, copy, error)) {
+		fs::rename(copy, path, error);
+	}
+	if (error) {
+		fs::remove(copy, error);
+	}
+}
+
+void ReplaceLinksByCopies(const std::filesystem::path &root) {
+	namespace fs = std::filesystem;
+	auto suffix = ".copy" + std::to_string(std::random_device()());
+	for (auto relative : REAL_FILES) {
+		auto path = root / relative;
+		std::error_code error;
+		if (!fs::is_directory(path, error)) {
+			ReplaceLinkByCopy(path, suffix);
+			continue;
+		}
+		// Collected first: replacing entries while iterating over them is not safe.
+		std::vector<fs::path> entries;
+		for (fs::recursive_directory_iterator it(path, error), end; !error && it != end; it.increment(error)) {
+			entries.push_back(it->path());
+		}
+		for (auto &entry : entries) {
+			ReplaceLinkByCopy(entry, suffix);
+		}
+	}
 }
 
 } // namespace
@@ -41,6 +99,8 @@ int main(int argc, char *argv[]) {
 		// and creates this one if it is missing. Without a sandbox the shards share it,
 		// and two that start together both try to create it; the loser aborts. Create
 		// it here, where failing because it already exists does not matter.
+		ReplaceLinksByCopies(test_dir);
+
 		auto scratch_dir = test_dir + "/duckdb_unittest_tempdir";
 #ifdef _WIN32
 		_mkdir(scratch_dir.c_str());
@@ -81,31 +141,6 @@ int main(int argc, char *argv[]) {
 			args.push_back("--end-offset-percentage");
 			args.push_back(std::to_string(100 * (index + 1) / total));
 		}
-	}
-
-	// Tests that cannot pass under Bazel are skipped by name. Only when no test was asked
-	// for on the command line: a filter given there replaces this one.
-	//
-	// The filter starts with ~[.] because the runner's hidden tests, the slow ones among
-	// them, are only left out by default when there is no filter at all.
-	std::vector<std::string> skipped;
-#ifdef __APPLE__
-	// Opens a file of the test data for writing. Bazel's macOS sandbox lets a test write
-	// only in its own directories, and the test data is linked from outside them.
-	skipped.push_back("Test opening an invalid database file");
-#endif
-	bool has_filter = false;
-	for (int i = 1; i < argc; i++) {
-		if (argv[i][0] != '-') {
-			has_filter = true;
-		}
-	}
-	if (!skipped.empty() && !has_filter) {
-		std::string filter = "~[.]";
-		for (auto &name : skipped) {
-			filter += "~\"" + name + "\"";
-		}
-		args.push_back(filter);
 	}
 
 	std::vector<char *> new_argv;

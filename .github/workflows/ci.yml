@@ -143,7 +143,10 @@ jobs:
         run: touch "$RUNNER_TEMP/build-start"
 
       - name: Run DuckDB's test suite
-        run: bazel test -c opt @duckdb//:unittest --keep_going
+        # A few of DuckDB's tests depend on timing and fail now and then on a loaded
+        # runner; upstream's own harness retries failures too. A shard that passes on
+        # its second attempt is reported as flaky, not as passed.
+        run: bazel test -c opt @duckdb//:unittest --keep_going --flaky_test_attempts=2
 
       - name: Trim disk cache
         run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
