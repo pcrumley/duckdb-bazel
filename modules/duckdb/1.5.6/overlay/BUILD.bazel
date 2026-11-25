@@ -9,10 +9,12 @@ compiled with -O3 rather than the toolchain's usual -O2.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load(":loadable_extension.bzl", "loadable_test_extension")
 load(":unity.bzl", "unity_cc_library")
 
 package(default_visibility = ["//visibility:private"])
@@ -831,7 +833,43 @@ TPCH_TEST_SRCS = [
 ]
 
 # Sources upstream leaves out on Windows.
-NON_WINDOWS_TEST_SRCS = ["test/api/test_read_only.cpp"] + glob(["test/persistence/**/*.cpp"])
+NON_WINDOWS_TEST_SRCS = [
+    "test/api/test_read_only.cpp",
+    "test/extension/test_remote_optimizer.cpp",
+] + glob(["test/persistence/**/*.cpp"])
+
+# The extensions under test/extension/, which the tests load at run time. As upstream
+# builds them by default, each has its own copy of DuckDB linked in.
+cc_binary(
+    name = "append_extension_metadata",
+    testonly = True,
+    srcs = ["bazel/append_extension_metadata.cpp"],
+    visibility = ["//visibility:private"],
+    deps = [":headers"],
+)
+
+[
+    loadable_test_extension(
+        name = name,
+        srcs = ["test/extension/%s.cpp" % name],
+        abi_type = "CPP",
+        copts = TEST_COPTS,
+        duckdb_version = DUCKDB_VERSION,
+        entry_point = name + "_duckdb_cpp_init",
+        local_defines = TEST_DEFINES,
+        deps = [
+            ":core",
+            ":headers",
+            ":static_build",
+            ":third_party_headers",
+        ],
+    )
+    for name in [
+        "loadable_extension_demo",
+        # Uses sockets through the POSIX interface. Not built on Windows.
+        "loadable_extension_optimizer_demo",
+    ]
+]
 
 cc_library(
     name = "unittest_tests",
@@ -840,7 +878,8 @@ cc_library(
         ["test/**/*.cpp"],
         exclude = TPCH_TEST_SRCS + NON_WINDOWS_TEST_SRCS + [
             "test/unittest.cpp",
-            # Needs extensions built as loadable modules, which this build does not have.
+            # The sources of the loadable extensions above, and a test that is not
+            # built on Windows.
             "test/extension/**",
             # Not part of upstream's unittest binary either.
             "test/ossfuzz/parse_fuzz_test.cpp",
@@ -887,13 +926,11 @@ cc_test(
             "test/**/*.h",
             "test/**/*.hpp",
             "**/CMakeLists.txt",
-            # Tests of loadable extensions, which this build cannot make. The runner
-            # registers the scripts it finds, so leaving them out skips them. A filter
-            # argument would do it too, but any filter also switches on the slow tests
-            # that the runner leaves out by default.
-            "test/extension/**",
         ],
-    ),
+    ) + [":loadable_extension_demo_loadable_extension"] + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [":loadable_extension_optimizer_demo_loadable_extension"],
+    }),
     # Where the source tree is within the runfiles: this repository's directory there.
     local_defines = ['DUCKDB_RUNFILES_DIRECTORY=\\"%s\\"' % (repo_name() or "_main")],
     shard_count = 16,
