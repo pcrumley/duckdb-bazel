@@ -919,8 +919,6 @@ cc_library(
             "test/unittest.cpp",
             # Compiled by :unittest_radix_ht_sink.
             "test/common/test_radix_ht_sink.cpp",
-            # Two of its nine tests install that same demo extension.
-            "test/common/test_http_transport_manager.cpp",
             # Compiled by :unittest_static_demo_extension.
             "test/api/capi/v2/static_extension/**",
             # Need extensions built as loadable modules, which this build does not have.
@@ -1015,10 +1013,6 @@ cc_test(
     # Where the source tree is within the runfiles: this repository's directory there.
     local_defines = ['DUCKDB_RUNFILES_DIRECTORY=\\"%s\\"' % (repo_name() or "_main")],
     shard_count = 16,
-    # One test opens a file from the test data for writing, and Bazel's macOS sandbox
-    # only lets a test write inside its own directories; the test data is linked from
-    # outside them.
-    tags = ["no-sandbox"],
     visibility = ["//visibility:public"],
     deps = [
         ":duckdb",
