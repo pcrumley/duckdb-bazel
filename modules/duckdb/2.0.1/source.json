@@ -1,0 +1,14 @@
+{
+    "url": "https://github.com/duckdb/duckdb/archive/refs/tags/v2.0.1.tar.gz",
+    "integrity": "sha256-Herp1JF70GnEbCXG3b5Rou8GzHwS5qEBMq9PoPuDShQ=",
+    "strip_prefix": "duckdb-2.0.1",
+    "overlay": {
+        "BUILD.bazel": "sha256-nEk0MGqu5PXAa2hn3ypa2DE7q2uykqOaIMmKyroEWxQ=",
+        "MODULE.bazel": "sha256-QRlv+0f826U4XDiSJoejBgCtzcBIzkvFf5WFSH4R5i4=",
+        "bazel/extension_test_paths.cpp": "sha256-7R4wZhID994NGRpvwkmBD80TsDzBpHtuD7wRICEe4Hs=",
+        "bazel/static_extension_loader.c": "sha256-4CCcKZAg5Jc0AJMWluaY5E8B3JM1XKFoD1ED/HV55HI=",
+        "bazel/unittest_main.cpp": "sha256-IAHVf5FGEEPVPuTC8kZ+H9pNkG8h7Os416cT6V708z4=",
+        "tools/shell/BUILD.bazel": "sha256-W+R7d6lkBlnDcAlotadamheXhMrBN/eQhuOc0PXOhEA=",
+        "unity.bzl": "sha256-M3NyRdzIrD0NNgoHJ6N7DVqf0GAqN8EWPcdnyVnx0WE="
+    }
+}

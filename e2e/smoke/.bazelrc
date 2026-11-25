@@ -23,6 +23,13 @@ test --test_output=errors
 # (administrator rights or Developer Mode).
 build:windows --enable_runfiles
 
+# Compile with clang-cl instead of MSVC on Windows: --config=clang-cl. It needs LLVM
+# installed, and BAZEL_LLVM set to its directory if Bazel does not find it. For an
+# x86_64 host only: the platform and the toolchain it names are the x64 ones.
+build:clang-cl --extra_toolchains=@local_config_cc//:cc-toolchain-x64_windows-clang-cl
+build:clang-cl --extra_execution_platforms=//:windows_clang_cl
+build:clang-cl --host_platform=//:windows_clang_cl
+
 # Keeps compiled objects across overlay edits and `bazel clean`: a clean DuckDB build is
 # over ten minutes, and switching a flag back would otherwise recompile it.
 build --disk_cache=~/.cache/duckdb-bazel-disk-cache

@@ -1,0 +1,10 @@
+module(
+    name = "duckdb",
+    version = "2.0.1",
+    # Registry overlays need Bazel 7.2.1 or newer.
+    bazel_compatibility = [">=7.2.1"],
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.2.22")

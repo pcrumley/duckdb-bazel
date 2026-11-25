@@ -8,7 +8,7 @@ the aim is to submit this there once it is complete.
 **Status: work in progress.** The core library and the extensions listed below build and
 pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
 (MSVC). DuckDB's own test suite passes in CI on Linux x86_64, Linux arm64, macOS arm64
-and Windows x86_64.
+and Windows x86_64 (with clang-cl).
 
 ## Use
 
@@ -22,7 +22,7 @@ common --registry=https://bcr.bazel.build
 In `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "duckdb", version = "1.5.6")
+bazel_dep(name = "duckdb", version = "2.0.1")
 ```
 
 Then depend on `@duckdb` from a `cc_library`, `cc_binary` or `cc_test` and
@@ -36,6 +36,24 @@ On Windows the build passes MSVC-style compiler flags, so it needs MSVC or clang
 DuckDB takes UTF-8 strings. MSVC encodes string literals in the system code page by
 default, so if your code passes non-ASCII literals to DuckDB, compile it with `/utf-8`,
 as upstream's own build does, for example with `copts = ["/utf-8"]` on those targets.
+
+### Changes in DuckDB 2.0
+
+- Linked extensions, `core_functions` included, are registered by a static initialiser in
+  the library. A database opened before that runs, from a static initialiser of your
+  own, has no extensions. Open databases from `main` onwards.
+- Outside `-c opt`, DuckDB is built with its internal assertions on
+  (`DUCKDB_FORCE_ASSERT`) and is much slower. 2.0 does not compile in Bazel's default
+  mode without them. The build chooses by compilation mode: `-c opt` gets `NDEBUG`.
+
+### Changes in DuckDB 2.0
+
+- Linked extensions, `core_functions` included, are registered by a static initialiser in
+  the library. A database opened before that runs, from a static initialiser of your
+  own, has no extensions. Open databases from `main` onwards.
+- Outside `-c opt`, DuckDB is built with its internal assertions on
+  (`DUCKDB_FORCE_ASSERT`) and is much slower. 2.0 does not compile in Bazel's default
+  mode without them. The build chooses by compilation mode: `-c opt` gets `NDEBUG`.
 
 ### Extensions
 
@@ -100,7 +118,7 @@ the `-O2` Bazel's toolchains use. Your own targets are not affected.
 ### Tests
 
 DuckDB's own test suite is a target too: its C++ API tests and SQL logic tests, about
-4,500 test cases, run as 16 shards.
+8,500 test cases in DuckDB 2.0, run as 16 shards.
 
 ```
 bazel test -c opt @duckdb//:unittest
@@ -109,8 +127,8 @@ bazel test -c opt @duckdb//:unittest
 It tests the library as your flags configure it, and skips tests that need an extension
 that is not linked. Use `-c opt`: an unoptimised DuckDB runs its debug checks and takes
 several times longer. Two kinds of test are left out: those that load extensions built
-as separate modules, which this build does not produce, and upstream's slow tests, which
-its runner skips by default too.
+as separate modules, which this build does not produce (two tests in 2.0, skipped by
+name), and upstream's slow tests, which its runner skips by default too.
 
 Bazel gives a test its data as symbolic links, which a few of DuckDB's tests cannot work
 through. The test's entry point replaces the files those tests use, about 5 MB, with real
@@ -119,6 +137,16 @@ copies before it starts.
 On Windows, add `--enable_runfiles`: the suite reads its test files from a runfiles
 directory, which Bazel only creates there when asked, and which needs permission to
 create symbolic links (administrator rights or Developer Mode).
+
+Upstream builds and tests DuckDB 2.0 on Windows with clang-cl, not with MSVC's own
+compiler, and so does CI here for the test suite. With MSVC the library builds and passes
+the smoke test, but a few of DuckDB's tests fail. `e2e/smoke/.bazelrc` shows how to
+select clang-cl (`--config=clang-cl`).
+
+Upstream builds and tests DuckDB 2.0 on Windows with clang-cl, not with MSVC's own
+compiler, and so does CI here for the test suite. With MSVC the library builds and passes
+the smoke test, but a few of DuckDB's tests fail. `e2e/smoke/.bazelrc` shows how to
+select clang-cl (`--config=clang-cl`).
 
 ### Build time
 
@@ -133,7 +161,7 @@ Bazel caches the result, but CI and fresh checkouts pay it again unless you use
 bazel_registry.json          marks this repository as a registry
 modules/duckdb/
   metadata.json
-  1.5.6/
+  2.0.1/
     source.json              upstream tarball, plus a hash for each overlay file
     MODULE.bazel
     presubmit.yml            BCR CI configuration
