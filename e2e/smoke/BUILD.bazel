@@ -53,10 +53,6 @@ cc_test(
     name = "smoke_shared_test",
     srcs = ["smoke_test.cc"],
     args = LINKED_EXTENSIONS,
-    dynamic_deps = ["@duckdb//:libduckdb"],
-    target_compatible_with = select({
-        "@platforms//os:windows": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = ["@duckdb"],
+    copts = UTF8_COPTS,
+    deps = ["@duckdb//:duckdb_shared"],
 )

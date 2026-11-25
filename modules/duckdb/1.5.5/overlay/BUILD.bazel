@@ -9,6 +9,7 @@ compiled with -O3 rather than the toolchain's usual -O2.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -151,13 +152,20 @@ cc_library(
         "src/include/**/*.h",
         "src/include/**/*.hpp",
     ]),
-    # On Windows the API macros default to dllimport. This build is always a static
-    # library, so consumers and DuckDB's own sources must all see this.
+    includes = ["src/include"],
+)
+
+# On Windows the API macros in duckdb/common/winapi.hpp default to dllimport, which is
+# right for code that uses duckdb.dll. Code that links DuckDB statically has to see this
+# define instead. DuckDB's own sources see neither: as in upstream's build, they are
+# compiled with DUCKDB_BUILD_LIBRARY, which exports the API, and the same objects serve
+# the static library and the DLL.
+cc_library(
+    name = "static_build",
     defines = select({
         "@platforms//os:windows": ["DUCKDB_STATIC_BUILD"],
         "//conditions:default": [],
     }),
-    includes = ["src/include"],
 )
 
 # Headers of every vendored library, with upstream's include paths. Internal: the public
@@ -691,32 +699,50 @@ cc_library(
         ":extension_loader",
     ],
     visibility = ["//visibility:public"],
-    deps = [":headers"],
+    deps = [
+        ":headers",
+        ":static_build",
+    ],
 )
 
-# DuckDB as one shared library, libduckdb.so or libduckdb.dylib, holding the core and the
-# extensions selected by the flags. To link a Bazel target against it rather than
-# statically, depend on :duckdb as usual and add
-#   dynamic_deps = ["@duckdb//:libduckdb"]
-#
-# Not available on Windows: this build compiles DuckDB there with DUCKDB_STATIC_BUILD,
-# which leaves its API unexported.
+# DuckDB as one shared library holding the core and the extensions selected by the
+# flags: libduckdb.so, libduckdb.dylib or duckdb.dll. This is the file itself, for
+# packaging or for use outside Bazel. To link a Bazel target against it, depend on
+# :duckdb_shared below.
 cc_shared_library(
     name = "libduckdb",
     shared_lib_name = select({
         "@platforms//os:macos": "libduckdb.dylib",
+        "@platforms//os:windows": "duckdb.dll",
         "//conditions:default": "libduckdb.so",
-    }),
-    target_compatible_with = select({
-        "@platforms//os:windows": ["@platforms//:incompatible"],
-        "//conditions:default": [],
     }),
     user_link_flags = select({
         "@platforms//os:macos": ["-Wl,-install_name,@rpath/libduckdb.dylib"],
+        "@platforms//os:windows": [],
         "//conditions:default": ["-Wl,-soname,libduckdb.so"],
     }),
     visibility = ["//visibility:public"],
     deps = [":duckdb"],
+)
+
+# The import library that goes with duckdb.dll.
+filegroup(
+    name = "libduckdb_interface",
+    srcs = [":libduckdb"],
+    output_group = "interface_library",
+)
+
+# DuckDB linked dynamically: depend on this instead of :duckdb to use the shared library
+# above. A binary must not get both, or it would hold two copies of DuckDB.
+cc_import(
+    name = "duckdb_shared",
+    interface_library = select({
+        "@platforms//os:windows": ":libduckdb_interface",
+        "//conditions:default": None,
+    }),
+    shared_library = ":libduckdb",
+    visibility = ["//visibility:public"],
+    deps = [":headers"],
 )
 
 # The command-line shell. The binary itself is //tools/shell:duckdb, a separate package
@@ -775,6 +801,7 @@ TEST_DEPS = [
     ":core_functions_extension",
     ":extension_loader",
     ":headers",
+    ":static_build",
     ":test_headers",
     ":third_party_headers",
 ] + [

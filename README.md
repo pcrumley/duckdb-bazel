@@ -30,7 +30,7 @@ Then depend on `@duckdb` from a `cc_library`, `cc_binary` or `cc_test` and
 Requires Bazel 7.2.1 or newer.
 
 On Windows the build passes MSVC-style compiler flags, so it needs MSVC or clang-cl, and
-it defines `DUCKDB_STATIC_BUILD` for your targets: DuckDB is always linked statically.
+`@duckdb` defines `DUCKDB_STATIC_BUILD` for your targets, as static linking needs.
 
 DuckDB takes UTF-8 strings. MSVC encodes string literals in the system code page by
 default, so if your code passes non-ASCII literals to DuckDB, compile it with `/utf-8`,
@@ -83,16 +83,11 @@ Nothing builds it unless you ask for it.
 
 ### Shared library
 
-By default DuckDB is linked statically into your binaries. `@duckdb//:libduckdb` builds
-it as one shared library instead, `libduckdb.so` or `libduckdb.dylib`, holding the core
-and the extensions your flags select. To link a target against it, keep the dependency
-on `@duckdb` and add:
+By default DuckDB is linked statically into your binaries. To link it dynamically,
+depend on `@duckdb//:duckdb_shared` instead of `@duckdb`. A binary must not get both.
 
-```starlark
-dynamic_deps = ["@duckdb//:libduckdb"],
-```
-
-It is not available on Windows.
+The library itself is `@duckdb//:libduckdb`: `libduckdb.so`, `libduckdb.dylib` or
+`duckdb.dll`, holding the core and the extensions your flags select.
 
 ### Optimisation
 
