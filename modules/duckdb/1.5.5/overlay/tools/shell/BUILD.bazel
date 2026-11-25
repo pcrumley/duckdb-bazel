@@ -1,0 +1,30 @@
+"""DuckDB's command-line shell."""
+
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+
+# Links the library as the flags of @duckdb configure it, so the shell has the same
+# extensions. The sources below are compiled by //:shell.
+cc_binary(
+    name = "duckdb",
+    visibility = ["//visibility:public"],
+    deps = ["//:shell"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob([
+        "*.cpp",
+        "linenoise/*.cpp",
+    ]),
+    visibility = ["//:__pkg__"],
+)
+
+filegroup(
+    name = "hdrs",
+    srcs = glob([
+        "include/*.hpp",
+        "linenoise/include/*.h",
+        "linenoise/include/*.hpp",
+    ]),
+    visibility = ["//:__pkg__"],
+)

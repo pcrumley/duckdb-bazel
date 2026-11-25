@@ -71,6 +71,16 @@ build --@duckdb//:jemalloc=false
 
 On other operating systems the flag has no effect and the system allocator is used.
 
+### Command-line shell
+
+The `duckdb` shell is a target too, with the extensions your flags select:
+
+```
+bazel run -c opt @duckdb//tools/shell:duckdb
+```
+
+Nothing builds it unless you ask for it.
+
 ### Optimisation
 
 Build with `-c opt` for anything but development: that is the equivalent of upstream's
@@ -116,6 +126,7 @@ modules/duckdb/
       BUILD.bazel            the build itself
       unity.bzl              macro that compiles a source directory as one unit
       bazel/                 entry point that runs upstream's test runner under Bazel
+      tools/shell/           package of the command-line shell
       generated/             stand-ins for files upstream's CMake generates
 e2e/smoke/                   consumer workspace that resolves duckdb from this checkout
 tools/update_integrity.py    syncs overlay/MODULE.bazel and the hashes in source.json
@@ -135,7 +146,7 @@ lifetime of its server, so restart it first or it keeps using the previous overl
 ```
 cd e2e/smoke
 bazel shutdown
-bazel test //:smoke_test
+bazel test //...
 ```
 
 The workspace's `.bazelrc` sets a disk cache in `~/.cache/duckdb-bazel-disk-cache`, so
