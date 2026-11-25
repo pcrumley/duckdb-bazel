@@ -169,6 +169,113 @@ jobs:
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         run: |
           exe="$(bazel info -c opt --config=clang-cl bazel-bin)/external/duckdb+/unittest.exe"
+          run_tests() {
+            echo "##### $1: $(pwd -W) ($(pwd -W | wc -c) characters)"
+            for t in \
+              "RemoveDirectoryExtended never removes directory contents in single mode" \
+              "Test directory cleanup preserves a concurrently created sibling" \
+              "*open and read every listed file with the secret it names" \
+              "Two scans of the same files in one query each read them with the secret they name" \
+              "A statement that expands into a transaction statement is refused before anything runs"
+            do
+              echo "=== $1: $t"
+              "$exe" "$t" 2>&1 | grep -E "All tests passed|test cases:|FAILED:|No test cases" || true
+            done
+          }
+          # The archive holds two symbolic links that tar cannot create here.
+          mkdir -p "$RUNNER_TEMP/plain" && cd "$RUNNER_TEMP/plain"
+          curl -sSL https://github.com/duckdb/duckdb/archive/refs/tags/v2.0.1.tar.gz | tar xz || true
+          (cd duckdb-2.0.1 && run_tests "plain tree")
+          # The same tree under a path about as long as the one Bazel runs the tests in.
+          deep="$RUNNER_TEMP/plain/execroot/_main/bazel-out/x64_windows-opt/bin/external/duckdb+/unittest.exe.runfiles"
+          mkdir -p "$deep" && mv duckdb-2.0.1 "$deep/duckdb+"
+          (cd "$deep/duckdb+" && run_tests "plain tree, long path")
+          # Bazel's own runfiles tree, entered directly rather than through --test-dir.
+          (cd "$exe.runfiles/duckdb+" && run_tests "runfiles tree")
+
+      - name: Trim disk cache
+        run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
+
+      # Saved from pull requests too (GitHub scopes those caches to the pull request), so
+      # that repeated pushes to one do not each pay for a full build. Not from forks:
+      # their caches would count against the repository's quota and could evict main's.
+      #
+      # Saved after a failure too, so that a failed test or link does not throw away the
+      # compilation before it. Those saves get a key of their own: cache keys cannot be
+      # overwritten, and a partial cache under the normal key would block the complete
+      # one from the run that fixes the failure.
+      - name: Save disk cache
+        if: ${{ !cancelled() && !github.event.pull_request.head.repo.fork }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/duckdb-bazel-disk-cache
+          key: >-
+            disk-cache-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('modules/**', 'e2e/**') }}${{
+            job.status != 'success' && format('-failed-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+
+  # Upstream's own test suite, against an optimised build with every extension. A job of
+  # its own because it needs an optimised build of DuckDB, separate from the smoke job's.
+  unittest:
+    name: DuckDB test suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+        working-directory: e2e/smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: bazel-contrib/setup-bazel@f34d6a05eae3c24acab7fa54587492daeaeffdab # 0.19.2
+        with:
+          module-root: e2e/smoke
+          bazelisk-cache: true
+          repository-cache: true
+          # The smoke job for this platform saves the same two caches.
+          cache-save: false
+
+      # A cache of its own: the optimised objects are different from the smoke job's.
+      - name: Restore disk cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/duckdb-bazel-disk-cache
+          key: disk-cache-unittest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('modules/**', 'e2e/**') }}
+          restore-keys: disk-cache-unittest-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Mark start of build
+        run: touch "$RUNNER_TEMP/build-start"
+
+      # On Windows the suite is built with clang-cl, the compiler upstream builds and
+      # tests its Windows releases with. The smoke job covers MSVC.
+      #
+      # The clang-cl that ships with Visual Studio, not the separate LLVM on the runner:
+      # MSVC's standard library refuses a Clang older than the one it was released with.
+      - name: Find Visual Studio's clang-cl
+        if: runner.os == 'Windows'
+        run: |
+          vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath)
+          llvm="$vs\\VC\\Tools\\Llvm\\x64"
+          "$(cygpath -u "$llvm")/bin/clang-cl.exe" --version
+          echo "BAZEL_LLVM=$llvm" >> "$GITHUB_ENV"
+
+      - name: Run DuckDB's test suite
+        # A few of DuckDB's tests depend on timing and fail now and then on a loaded
+        # runner; upstream's own harness retries failures too. A shard that passes on
+        # its second attempt is reported as flaky, not as passed.
+        run: >
+          bazel test -c opt @duckdb//:unittest --keep_going --flaky_test_attempts=2
+          ${{ runner.os == 'Windows' && '--config=clang-cl' || '' }}
+
+      # TEMPORARY, while four tests fail on Windows: run them from a plain copy of the
+      # source tree, to tell the runfiles layout apart from DuckDB's behaviour.
+      - name: Debug the failing Windows tests
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        run: |
+          exe="$(bazel info -c opt --config=clang-cl bazel-bin)/external/duckdb+/unittest.exe"
           ls -la "$exe"
           mkdir -p "$RUNNER_TEMP/plain" && cd "$RUNNER_TEMP/plain"
           # The archive holds two symbolic links that tar cannot create here.
