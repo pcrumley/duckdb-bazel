@@ -111,7 +111,8 @@ that is not linked. Use `-c opt`: an unoptimised DuckDB runs its debug checks an
 several times longer. Three kinds of test are left out: those that load extensions built
 as separate modules, which this build does not produce; upstream's slow tests, which its
 runner skips by default too; and one that cannot pass when the test data is reached
-through symbolic links, as it is under Bazel.
+through symbolic links, as it is under Bazel. On macOS one more is skipped: it writes to
+a file of the test data, which Bazel's sandbox does not allow there.
 
 On Windows, add `--enable_runfiles`: the suite reads its test files from a runfiles
 directory, which Bazel only creates there when asked, and which needs permission to

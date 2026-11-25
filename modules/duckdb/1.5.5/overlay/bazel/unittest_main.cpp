@@ -83,6 +83,31 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	// Tests that cannot pass under Bazel are skipped by name. Only when no test was asked
+	// for on the command line: a filter given there replaces this one.
+	//
+	// The filter starts with ~[.] because the runner's hidden tests, the slow ones among
+	// them, are only left out by default when there is no filter at all.
+	std::vector<std::string> skipped;
+#ifdef __APPLE__
+	// Opens a file of the test data for writing. Bazel's macOS sandbox lets a test write
+	// only in its own directories, and the test data is linked from outside them.
+	skipped.push_back("Test opening an invalid database file");
+#endif
+	bool has_filter = false;
+	for (int i = 1; i < argc; i++) {
+		if (argv[i][0] != '-') {
+			has_filter = true;
+		}
+	}
+	if (!skipped.empty() && !has_filter) {
+		std::string filter = "~[.]";
+		for (auto &name : skipped) {
+			filter += "~\"" + name + "\"";
+		}
+		args.push_back(filter);
+	}
+
 	std::vector<char *> new_argv;
 	for (auto &arg : args) {
 		new_argv.push_back(&arg[0]);

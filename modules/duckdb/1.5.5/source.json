@@ -3,9 +3,9 @@
     "integrity": "sha256-8zFV/5Yubh4I/R6cr/pIfUMlqmCZni6rx2/v9TTWVYs=",
     "strip_prefix": "duckdb-1.5.5",
     "overlay": {
-        "BUILD.bazel": "sha256-JL7dn5rzPD9/V9p6tUUqbO4rDgTdF1IplyCqSrJ64GE=",
+        "BUILD.bazel": "sha256-2uk90d9z0y2PPjEi9P0nWOLHjhnLIK0nJz+QGm0UVSs=",
         "MODULE.bazel": "sha256-XSaNrl8506OyvT8Iz3aLQhqS8tbM7IKNSchrjmf7DsU=",
-        "bazel/unittest_main.cpp": "sha256-jjROuMhTmcmX8yYNLjT3vfUcP7dNQLNg/ENZo+kptKY=",
+        "bazel/unittest_main.cpp": "sha256-95qtP2iJCMP78PLpz+Q5VIayskQYeIf9oRjvWumAOY4=",
         "generated/generated_extension_headers.hpp": "sha256-BahBFwHYASXKPG4jtOh7814BWzBabN/UvNOx1vpvvPc=",
         "generated/generated_extension_loader.cpp": "sha256-N10FrK43UVjH36bZIzfblhpMKk0Xe7Qi1wIZAkai2ng=",
         "tools/shell/BUILD.bazel": "sha256-W+R7d6lkBlnDcAlotadamheXhMrBN/eQhuOc0PXOhEA=",
