@@ -10,10 +10,12 @@ compiled with -O3 rather than the toolchain's usual -O2.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load(":loadable_extension.bzl", "loadable_test_extension")
 load(":unity.bzl", "unity_cc_library")
 
 package(default_visibility = ["//visibility:private"])
@@ -870,7 +872,10 @@ TPCH_TEST_SRCS = [
 TPCDS_TEST_SRCS = ["test/api/test_tpcds_with_streaming.cpp"]
 
 # Sources upstream leaves out on Windows.
-NON_WINDOWS_TEST_SRCS = ["test/api/test_read_only.cpp"] + glob(["test/persistence/**/*.cpp"])
+NON_WINDOWS_TEST_SRCS = [
+    "test/api/test_read_only.cpp",
+    "test/extension/test_remote_optimizer.cpp",
+] + glob(["test/persistence/**/*.cpp"])
 
 # A small extension written against the C++ wrapper of the C API, which one of the tests
 # registers as a statically linked extension.
@@ -887,6 +892,96 @@ cc_library(
     # The test that refers to it is in a library that comes later in a static link.
     alwayslink = True,
 )
+
+# The extensions under test/extension/, which the tests load at run time. As upstream
+# builds them by default, each has its own copy of DuckDB linked in.
+cc_binary(
+    name = "append_extension_metadata",
+    testonly = True,
+    srcs = ["bazel/append_extension_metadata.cpp"],
+    visibility = ["//visibility:private"],
+    deps = [":headers"],
+)
+
+# Upstream compiles extensions without it: they use the library, they are not part of it.
+LOADABLE_EXTENSION_COPTS = TEST_COPTS + select({
+    "@platforms//os:windows": ["/UDUCKDB_BUILD_LIBRARY"],
+    "//conditions:default": ["-UDUCKDB_BUILD_LIBRARY"],
+})
+
+# Extension name to source file. Written against DuckDB's internal C++ interface.
+LOADABLE_TEST_EXTENSIONS = {
+    "explicit_extension_schema": "explicit_extension_schema.cpp",
+    "explicit_extension_schema_alias": "explicit_extension_schema_alias.cpp",
+    "loadable_dialect_extension_demo": "loadable_dialect_extension_demo.cpp",
+    "loadable_extension_demo": "loadable_extension_demo.cpp",
+    "loadable_extension_demo_double": "loadable_extension_demo_alt.cpp",
+    "loadable_grammar_extension_demo": "loadable_grammar_extension_demo.cpp",
+    # Uses sockets through the POSIX interface. Not built on Windows.
+    "loadable_extension_optimizer_demo": "loadable_extension_optimizer_demo.cpp",
+}
+
+[
+    loadable_test_extension(
+        name = name,
+        srcs = ["test/extension/" + src],
+        abi_type = "CPP",
+        copts = LOADABLE_EXTENSION_COPTS,
+        duckdb_version = DUCKDB_VERSION,
+        entry_point = name + "_duckdb_cpp_init",
+        local_defines = TEST_DEFINES,
+        deps = [
+            ":core",
+            ":headers",
+            ":static_build",
+            ":third_party_headers",
+        ],
+    )
+    for name, src in LOADABLE_TEST_EXTENSIONS.items()
+]
+
+# The C++ wrapper around the C API, as extensions use it: every call goes through the
+# table of functions that DuckDB hands an extension when it loads it.
+cc_library(
+    name = "cpp_api_loadable",
+    testonly = True,
+    srcs = ["tools/cpp/duckdb_cpp.cpp"],
+    copts = LOADABLE_EXTENSION_COPTS,
+    local_defines = TEST_DEFINES + [
+        "DUCKDB_CPP_API_LOADABLE",
+        "DUCKDB_EXTENSION_API_VERSION_UNSTABLE=" + DUCKDB_VERSION,
+    ],
+    deps = [
+        ":headers",
+        ":test_headers",
+    ],
+)
+
+# Written against that wrapper. These do not link DuckDB.
+[
+    loadable_test_extension(
+        name = name,
+        srcs = ["test/extension/%s.cpp" % name],
+        abi_type = "C_STRUCT_UNSTABLE",
+        copts = LOADABLE_EXTENSION_COPTS,
+        duckdb_version = DUCKDB_VERSION,
+        entry_point = name + "_init_c_api_v2",
+        local_defines = TEST_DEFINES + [
+            "DUCKDB_CPP_API_LOADABLE",
+            "DUCKDB_EXTENSION_API_VERSION_UNSTABLE=" + DUCKDB_VERSION,
+            "DUCKDB_EXTENSION_NAME=" + name,
+        ],
+        deps = [
+            ":cpp_api_loadable",
+            ":headers",
+            ":test_headers",
+        ],
+    )
+    for name in [
+        "cpp_api_demo",
+        "cpp_api_demo_fail",
+    ]
+]
 
 # test_radix_ht_sink.cpp uses BufferManager without including its header. Upstream never
 # notices because its unity build compiles the file after others that do.
@@ -921,7 +1016,8 @@ cc_library(
             "test/common/test_radix_ht_sink.cpp",
             # Compiled by :unittest_static_demo_extension.
             "test/api/capi/v2/static_extension/**",
-            # Need extensions built as loadable modules, which this build does not have.
+            # The sources of the loadable extensions above, and a test that is not
+            # built on Windows.
             "test/extension/*.cpp",
             # Not part of upstream's unittest binary either.
             "test/api/serialized_plans/test_plan_serialization_bwc.cpp",
@@ -994,18 +1090,18 @@ cc_test(
             "test/**/*.h",
             "test/**/*.hpp",
             "**/CMakeLists.txt",
-            # Tests of loadable extensions, which this build cannot make. The runner
-            # registers the scripts it finds, so leaving them out skips them. A filter
-            # argument would do it too, but any filter also switches on the slow tests
-            # that the runner leaves out by default.
-            "test/extension/**",
-            # These load the demo extension from test/extension/, a loadable module
-            # that this build does not produce.
-            "test/sql/extensions/aliasing.test",
-            "test/sql/extensions/load_use_extension_one_query.test",
-            "test/sql/extensions/quack_peeling.test",
         ],
-    ),
+    ) + [
+        ":%s_loadable_extension" % name
+        for name in LOADABLE_TEST_EXTENSIONS
+        if name != "loadable_extension_optimizer_demo"
+    ] + [
+        ":cpp_api_demo_fail_loadable_extension",
+        ":cpp_api_demo_loadable_extension",
+    ] + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [":loadable_extension_optimizer_demo_loadable_extension"],
+    }),
     # Where the source tree is within the runfiles: this repository's directory there.
     local_defines = ['DUCKDB_RUNFILES_DIRECTORY=\\"%s\\"' % (repo_name() or "_main")],
     shard_count = 16,

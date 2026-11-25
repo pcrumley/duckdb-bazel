@@ -33,18 +33,15 @@ Requires Bazel 7.2.1 or newer.
 On Windows the build passes MSVC-style compiler flags, so it needs MSVC or clang-cl, and
 `@duckdb` defines `DUCKDB_STATIC_BUILD` for your targets, as static linking needs.
 
+Upstream links its Windows binaries against the static C runtime (`/MT`). Bazel's
+Windows toolchain uses the dynamic one (`/MD`) unless told otherwise, and DuckDB here
+follows the toolchain, since a library has to use the same runtime as the code it is
+linked into. For a `duckdb.exe` or `duckdb.dll` that does not need the Visual C++
+runtime installed, build with `--features=static_link_msvcrt`.
+
 DuckDB takes UTF-8 strings. MSVC encodes string literals in the system code page by
 default, so if your code passes non-ASCII literals to DuckDB, compile it with `/utf-8`,
 as upstream's own build does, for example with `copts = ["/utf-8"]` on those targets.
-
-### Changes in DuckDB 2.0
-
-- Linked extensions, `core_functions` included, are registered by a static initialiser in
-  the library. A database opened before that runs, from a static initialiser of your
-  own, has no extensions. Open databases from `main` onwards.
-- Outside `-c opt`, DuckDB is built with its internal assertions on
-  (`DUCKDB_FORCE_ASSERT`) and is much slower. 2.0 does not compile in Bazel's default
-  mode without them. The build chooses by compilation mode: `-c opt` gets `NDEBUG`.
 
 ### Changes in DuckDB 2.0
 
@@ -126,9 +123,12 @@ bazel test -c opt @duckdb//:unittest
 
 It tests the library as your flags configure it, and skips tests that need an extension
 that is not linked. Use `-c opt`: an unoptimised DuckDB runs its debug checks and takes
-several times longer. Two kinds of test are left out: those that load extensions built
-as separate modules, which this build does not produce (two tests in 2.0, skipped by
-name), and upstream's slow tests, which its runner skips by default too.
+several times longer. Upstream's slow tests are left out, as its runner leaves them out
+by default too.
+
+Some tests load an extension at run time. For those the build produces the small test
+extensions under `test/extension/` as loadable modules, each with its own copy of DuckDB
+linked in, as upstream builds them by default. They add about 300 MB to the build.
 
 Bazel gives a test its data as symbolic links, which a few of DuckDB's tests cannot work
 through. The test's entry point replaces the files those tests use, about 5 MB, with real
@@ -137,11 +137,6 @@ copies before it starts.
 On Windows, add `--enable_runfiles`: the suite reads its test files from a runfiles
 directory, which Bazel only creates there when asked, and which needs permission to
 create symbolic links (administrator rights or Developer Mode).
-
-Upstream builds and tests DuckDB 2.0 on Windows with clang-cl, not with MSVC's own
-compiler, and so does CI here for the test suite. With MSVC the library builds and passes
-the smoke test, but a few of DuckDB's tests fail. `e2e/smoke/.bazelrc` shows how to
-select clang-cl (`--config=clang-cl`).
 
 Upstream builds and tests DuckDB 2.0 on Windows with clang-cl, not with MSVC's own
 compiler, and so does CI here for the test suite. With MSVC the library builds and passes

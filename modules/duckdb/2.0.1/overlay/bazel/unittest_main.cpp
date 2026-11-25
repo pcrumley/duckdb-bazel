@@ -167,32 +167,6 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	// Tests that this build cannot run are skipped by name. Only when no test was asked
-	// for on the command line: a filter given there replaces this one.
-	//
-	// The filter starts with ~[.] because the runner's hidden tests, the slow ones among
-	// them, are only left out by default when there is no filter at all.
-	//
-	// These two install the demo extension from test/extension/, a loadable module that
-	// this build does not produce.
-	const char *const skipped[] = {
-	    "Core extension downloads use managed HTTP transports",
-	    "UPDATE EXTENSIONS does not send an etag to a moved repository",
-	};
-	bool has_filter = false;
-	for (int i = 1; i < argc; i++) {
-		if (argv[i][0] != '-') {
-			has_filter = true;
-		}
-	}
-	if (!has_filter) {
-		std::string filter = "~[.]";
-		for (auto name : skipped) {
-			filter += "~\"" + std::string(name) + "\"";
-		}
-		args.push_back(filter);
-	}
-
 	std::vector<char *> new_argv;
 	for (auto &arg : args) {
 		new_argv.push_back(&arg[0]);
