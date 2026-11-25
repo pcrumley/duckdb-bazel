@@ -892,10 +892,6 @@ cc_test(
             # argument would do it too, but any filter also switches on the slow tests
             # that the runner leaves out by default.
             "test/extension/**",
-            # Checks that a file under an allowed directory can be read. DuckDB resolves
-            # symbolic links for that check, and in a runfiles tree every file is a link
-            # to somewhere else.
-            "test/sql/settings/allowed_directories.test",
         ],
     ),
     # Where the source tree is within the runfiles: this repository's directory there.
