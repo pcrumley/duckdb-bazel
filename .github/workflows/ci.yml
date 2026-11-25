@@ -163,36 +163,6 @@ jobs:
           bazel test -c opt @duckdb//:unittest --keep_going --flaky_test_attempts=2
           ${{ runner.os == 'Windows' && '--config=clang-cl' || '' }}
 
-      # TEMPORARY, while four tests fail on Windows: run them from a plain copy of the
-      # source tree, to tell the runfiles layout apart from DuckDB's behaviour.
-      - name: Debug the failing Windows tests
-        if: ${{ !cancelled() && runner.os == 'Windows' }}
-        run: |
-          exe="$(bazel info -c opt --config=clang-cl bazel-bin)/external/duckdb+/unittest.exe"
-          run_tests() {
-            echo "##### $1: $(pwd -W) ($(pwd -W | wc -c) characters)"
-            for t in \
-              "RemoveDirectoryExtended never removes directory contents in single mode" \
-              "Test directory cleanup preserves a concurrently created sibling" \
-              "*open and read every listed file with the secret it names" \
-              "Two scans of the same files in one query each read them with the secret they name" \
-              "A statement that expands into a transaction statement is refused before anything runs"
-            do
-              echo "=== $1: $t"
-              "$exe" "$t" 2>&1 | grep -E "All tests passed|test cases:|FAILED:|No test cases" || true
-            done
-          }
-          # The archive holds two symbolic links that tar cannot create here.
-          mkdir -p "$RUNNER_TEMP/plain" && cd "$RUNNER_TEMP/plain"
-          curl -sSL https://github.com/duckdb/duckdb/archive/refs/tags/v2.0.1.tar.gz | tar xz || true
-          (cd duckdb-2.0.1 && run_tests "plain tree")
-          # The same tree under a path about as long as the one Bazel runs the tests in.
-          deep="$RUNNER_TEMP/plain/execroot/_main/bazel-out/x64_windows-opt/bin/external/duckdb+/unittest.exe.runfiles"
-          mkdir -p "$deep" && mv duckdb-2.0.1 "$deep/duckdb+"
-          (cd "$deep/duckdb+" && run_tests "plain tree, long path")
-          # Bazel's own runfiles tree, entered directly rather than through --test-dir.
-          (cd "$exe.runfiles/duckdb+" && run_tests "runfiles tree")
-
       - name: Trim disk cache
         run: find ~/.cache/duckdb-bazel-disk-cache -type f ! -newer "$RUNNER_TEMP/build-start" -delete
 
