@@ -2,7 +2,11 @@ matrix:
   platform:
     - debian11
     - ubuntu2404
+    - macos
+    - macos_arm64
+    - windows
   bazel:
+    - 7.x
     - 8.x
     - 9.x
 tasks:
@@ -12,3 +16,25 @@ tasks:
     bazel: ${{ bazel }}
     build_targets:
       - "@duckdb//:duckdb"
+      - "@duckdb//:libduckdb"
+      - "@duckdb//tools/shell:duckdb"
+bcr_test_module:
+  module_path: bazel/test_module
+  matrix:
+    platform:
+      - debian11
+      - ubuntu2404
+      - macos
+      - macos_arm64
+      - windows
+    bazel:
+      - 7.x
+      - 8.x
+      - 9.x
+  tasks:
+    run_test_module:
+      name: Run test module
+      platform: ${{ platform }}
+      bazel: ${{ bazel }}
+      test_targets:
+        - "//..."

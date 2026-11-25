@@ -1,14 +1,15 @@
 # duckdb-bazel
 
 A native Bazel (bzlmod) build of [DuckDB](https://duckdb.org), packaged as a small Bazel
-registry. DuckDB is not in the Bazel Central Registry yet
+registry. It is not an official DuckDB project. DuckDB is not in the Bazel Central
+Registry yet
 ([bazel-central-registry#4890](https://github.com/bazelbuild/bazel-central-registry/issues/4890));
-the aim is to submit this there once it is complete.
+this is being prepared for submission there.
 
-**Status: work in progress.** The core library and the extensions listed below build and
-pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
-(MSVC). DuckDB's own test suite passes in CI on Linux x86_64, Linux arm64, macOS arm64
-and Windows x86_64 (with clang-cl).
+The core library, the shell, the shared library and the extensions listed below build
+and pass a smoke test in CI on Linux x86_64, Linux arm64, macOS arm64 and Windows x86_64
+(MSVC). DuckDB's own test suite passes in CI on the same four platforms (on Windows with
+clang-cl).
 
 ## Use
 
@@ -165,10 +166,13 @@ modules/duckdb/
       BUILD.bazel            the build itself
       unity.bzl              macro that compiles a source directory as one unit
       bazel/                 entry point that runs upstream's test runner under Bazel
+      bazel/test_module/     module the BCR presubmit tests DuckDB with
       tools/shell/           package of the command-line shell
       generated/             stand-ins for files upstream's CMake generates
 e2e/smoke/                   consumer workspace that resolves duckdb from this checkout
 tools/update_integrity.py    syncs overlay/MODULE.bazel and the hashes in source.json
+tools/bump_version.py        adds a DuckDB version, starting from an existing one
+tools/presubmit_tree.py      lays out a version's source tree as a registry does
 ```
 
 ## Develop
@@ -187,6 +191,18 @@ cd e2e/smoke
 bazel shutdown
 bazel test //...
 ```
+
+To see what the BCR presubmit will see, lay out a version's tree and run its test module
+with no flags:
+
+```
+tools/presubmit_tree.py 1.5.6 /tmp/duckdb-1.5.6
+cd /tmp/duckdb-1.5.6/bazel/test_module
+bazel test //...
+```
+
+The "BCR presubmit" workflow does this on Linux, macOS and Windows with Bazel 7, 8 and 9.
+Start it by hand from the Actions tab; each job is a clean build of 5 to 15 minutes.
 
 The workspace's `.bazelrc` sets a disk cache in `~/.cache/duckdb-bazel-disk-cache`, so
 only the first build pays the full compile.

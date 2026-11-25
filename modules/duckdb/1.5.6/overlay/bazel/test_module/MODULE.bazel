@@ -1,0 +1,12 @@
+# The module that the Bazel Central Registry's presubmit tests DuckDB with: a small
+# program that uses DuckDB as another module would.
+module(name = "duckdb_test_module")
+
+bazel_dep(name = "duckdb")
+local_path_override(
+    module_name = "duckdb",
+    path = "../..",
+)
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.2.22")
